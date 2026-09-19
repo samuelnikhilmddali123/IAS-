@@ -2,6 +2,11 @@ const mongoose = require("mongoose");
 
 const foodSchema = new mongoose.Schema(
     {
+        id: {
+            type: String,
+            trim: true
+        },
+
         name: {
             type: String,
             required: true,
@@ -10,18 +15,21 @@ const foodSchema = new mongoose.Schema(
 
         description: {
             type: String,
-            trim: true
+            trim: true,
+            default: ""
         },
 
         category: {
             type: String,
             required: true,
-            trim: true
+            trim: true,
+            lowercase: true
         },
 
         subCategory: {
             type: String,
-            trim: true
+            trim: true,
+            default: "General"
         },
 
         isVeg: {
@@ -31,12 +39,14 @@ const foodSchema = new mongoose.Schema(
 
         portion: {
             type: String,
-            trim: true
+            trim: true,
+            default: "Standard Serving"
         },
 
         image: {
             type: String,
-            trim: true
+            trim: true,
+            default: ""
         },
 
         price: {
@@ -45,9 +55,14 @@ const foodSchema = new mongoose.Schema(
             min: 0
         },
 
+        rating: {
+            type: Number,
+            default: 4.8
+        },
+
         availableQuantity: {
             type: Number,
-            required: true,
+            default: 50,
             min: 0
         },
 
@@ -59,7 +74,7 @@ const foodSchema = new mongoose.Schema(
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Admin",
-            required: true
+            required: false
         }
     },
     {
@@ -67,4 +82,6 @@ const foodSchema = new mongoose.Schema(
     }
 );
 
-module.exports = mongoose.model("Food", foodSchema);
+foodSchema.index({ category: 1, isAvailable: 1 });
+
+module.exports = mongoose.model("Food", foodSchema);

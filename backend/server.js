@@ -9,11 +9,13 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const connectDB = require('./db');
+const migrateData = require('./src/utils/migrateData');
 const authRoutes = require('./src/routes/authRoutes');
 const foodRoutes = require('./src/routes/foodRoutes');
 const cartRoutes = require('./src/routes/cartRoutes');
 const orderRoutes = require('./src/routes/orderRoutes');
 const whatsappRoutes = require('./src/routes/whatsappRoutes');
+const orderService = require('./src/services/orderService');
 const dataStore = require('./src/storage/dataStore');
 
 const app = express();
@@ -34,9 +36,6 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 // Static files for Admin Dashboard and Uploads (Dishes & QR images)
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Attempt MongoDB connection (graceful fallback if offline)
-connectDB();
 
 // SerpApi Google Images search proxy
 function fetchSerpApiGoogleImages(query) {
@@ -114,19 +113,25 @@ app.get('/admin', (req, res) => {
 });
 
 // Root Health & System Status
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
   const dbStatusMap = {
-    0: 'Disconnected (Using Local JSON Storage Engine)',
+    0: 'Disconnected (Fallback to Local JSON Store)',
     1: 'Connected (MongoDB Active)',
     2: 'Connecting',
     3: 'Disconnecting',
   };
-  const stats = dataStore.getAdminStats();
+  let stats = {};
+  try {
+    stats = await orderService.getAdminStats();
+  } catch {
+    stats = dataStore.getAdminStats();
+  }
+
   res.json({
     message: 'Government Canteen Services Restaurant Backend is active',
     port: PORT,
-    database: dbStatusMap[mongoose.connection.readyState] || 'Local JSON Storage Engine Active',
-    storage: 'Dual-Layer Store (Mongoose + backend/data/ JSON)',
+    database: dbStatusMap[mongoose.connection.readyState] || 'MongoDB Active',
+    storage: mongoose.connection.readyState === 1 ? 'MongoDB Primary Database Engine' : 'Local JSON Storage Engine Active',
     adminDashboard: `http://localhost:${PORT}/admin`,
     metrics: stats,
   });
@@ -141,27 +146,39 @@ app.use((err, req, res, next) => {
   });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`  CANTEEN SERVICES BACKEND ACTIVE ON PORT ${PORT}      `);
-  console.log(`  Admin Dashboard: http://localhost:${PORT}/admin       `);
-  console.log(`  Food Menu API:   http://localhost:${PORT}/api/foods   `);
-  console.log(`  Orders API:      http://localhost:${PORT}/api/orders  `);
-  console.log(`  WhatsApp & QR:   http://localhost:${PORT}/api/whatsapp`);
-  console.log(`  Officer Search:  http://localhost:${PORT}/search-officer`);
-  console.log(`=======================================================`);
-});
-
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error('\n=======================================================');
-    console.error('⚠️  PORT ' + PORT + ' IS ALREADY IN USE!');
-    console.error('   The backend server is ALREADY running on port ' + PORT + '.');
-    console.error('   If you want to restart it, stop the existing process first:');
-    console.error('   Run: netstat -ano | findstr ' + PORT + ' and taskkill /F /PID <pid>');
-    console.error('=======================================================\n');
-    process.exit(1);
-  } else {
-    console.error('Server error:', err);
+async function startServer() {
+  // Connect to MongoDB and synchronize existing data
+  const isConnected = await connectDB();
+  if (isConnected) {
+    await migrateData();
   }
-});
+
+  const server = app.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`  CANTEEN SERVICES BACKEND ACTIVE ON PORT ${PORT}      `);
+    console.log(`  Database Status: ${mongoose.connection.readyState === 1 ? 'MongoDB Connected (Active)' : 'Local JSON Store (Fallback)'}`);
+    console.log(`  Admin Dashboard: http://localhost:${PORT}/admin       `);
+    console.log(`  Food Menu API:   http://localhost:${PORT}/api/foods   `);
+    console.log(`  Orders API:      http://localhost:${PORT}/api/orders  `);
+    console.log(`  WhatsApp & QR:   http://localhost:${PORT}/api/whatsapp`);
+    console.log(`  Officer Search:  http://localhost:${PORT}/search-officer`);
+    console.log(`=======================================================`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error('\n=======================================================');
+      console.error('⚠️  PORT ' + PORT + ' IS ALREADY IN USE!');
+      console.error('   The backend server is ALREADY running on port ' + PORT + '.');
+      console.error('   If you want to restart it, stop the existing process first:');
+      console.error('   Run: netstat -ano | findstr ' + PORT + ' and taskkill /F /PID <pid>');
+      console.error('=======================================================\n');
+      process.exit(1);
+    } else {
+      console.error('Server error:', err);
+    }
+  });
+}
+
+startServer();
+

@@ -5,10 +5,12 @@ const {
   registerUser,
   loginUser,
   qrLogin,
-  getAllUsers
+  getAllUsers,
+  getUserById,
+  updateUser,
+  deleteUser
 } = require('../services/authService');
 const userAuth = require('../middleware/userAuthMiddleware');
-const dataStore = require('../storage/dataStore');
 
 const router = express.Router();
 
@@ -104,7 +106,7 @@ router.post('/user/qr-login', handleQrLogin);
 // Current Authenticated Officer Profile Endpoint
 const handleMe = async (req, res) => {
   try {
-    const user = dataStore.getUserById(req.user.id);
+    const user = await getUserById(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'Officer profile not found' });
     }
@@ -119,7 +121,7 @@ const handleMe = async (req, res) => {
         avatar: user.avatar,
         designation: user.designation,
         department: user.department,
-        officerId: user.officerId || ('GOI-DL-2026-' + user.id.slice(-4))
+        officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4))
       }
     });
   } catch (error) {
@@ -151,17 +153,21 @@ router.get('/users', async (req, res) => {
 router.put('/users/:id', async (req, res) => {
   try {
     const { phone, name, email, designation, department } = req.body;
-    const user = dataStore.getUserById(req.params.id);
+    const user = await getUserById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'Officer not found' });
     }
-    if (phone) {
-      dataStore.updateUserPhone(user.id, phone);
-    }
-    const updated = dataStore.getUserById(user.id);
+    const updates = {};
+    if (phone) updates.phone = phone;
+    if (name) updates.name = name;
+    if (email) updates.email = email;
+    if (designation) updates.designation = designation;
+    if (department) updates.department = department;
+
+    const updated = await updateUser(user.id, updates);
     res.status(200).json({
       success: true,
-      message: 'Officer phone number updated successfully',
+      message: 'Officer profile updated successfully',
       user: updated
     });
   } catch (error) {
@@ -172,7 +178,7 @@ router.put('/users/:id', async (req, res) => {
 // Delete Officer (Admin Dashboard)
 router.delete('/users/:id', async (req, res) => {
   try {
-    const success = dataStore.deleteUser(req.params.id);
+    const success = await deleteUser(req.params.id);
     if (!success) {
       return res.status(404).json({ success: false, message: 'Officer not found' });
     }

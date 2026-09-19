@@ -23,7 +23,17 @@ const adminSchema = new mongoose.Schema(
 
         password: {
             type: String,
-            required: true
+            default: ""
+        },
+
+        pin: {
+            type: String,
+            default: "123456"
+        },
+
+        role: {
+            type: String,
+            default: "SUPER_ADMIN"
         }
     },
     {
@@ -31,4 +41,4 @@ const adminSchema = new mongoose.Schema(
     }
 );
 
-module.exports = mongoose.model("Admin", adminSchema);
+module.exports = mongoose.model("Admin", adminSchema);

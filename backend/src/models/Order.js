@@ -5,7 +5,17 @@ const orderItemSchema = new mongoose.Schema(
         food: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Food",
-            required: true
+            required: false
+        },
+
+        foodId: {
+            type: String,
+            default: ""
+        },
+
+        id: {
+            type: String,
+            default: ""
         },
 
         name: {
@@ -27,8 +37,12 @@ const orderItemSchema = new mongoose.Schema(
 
         total: {
             type: Number,
-            required: true,
-            min: 0
+            default: 0
+        },
+
+        image: {
+            type: String,
+            default: ""
         }
     },
     {
@@ -47,7 +61,27 @@ const orderSchema = new mongoose.Schema(
         user: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
-            required: true
+            required: false
+        },
+
+        userId: {
+            type: String,
+            default: "guest"
+        },
+
+        userName: {
+            type: String,
+            default: "IAS Officer"
+        },
+
+        userPhone: {
+            type: String,
+            default: ""
+        },
+
+        userAvatar: {
+            type: String,
+            default: ""
         },
 
         items: {
@@ -57,36 +91,61 @@ const orderSchema = new mongoose.Schema(
 
         subtotal: {
             type: Number,
-            required: true,
-            min: 0
+            default: 0
         },
 
         discount: {
             type: Number,
-            default: 0,
-            min: 0
+            default: 0
         },
 
         tax: {
             type: Number,
-            default: 0,
-            min: 0
+            default: 0
+        },
+
+        totalAmount: {
+            type: Number,
+            default: 0
         },
 
         grandTotal: {
             type: Number,
-            required: true,
-            min: 0
+            default: 0
+        },
+
+        paymentMethod: {
+            type: String,
+            default: "online"
+        },
+
+        orderNote: {
+            type: String,
+            default: ""
+        },
+
+        mealSlot: {
+            type: String,
+            default: "General"
+        },
+
+        tokenNumber: {
+            type: Number,
+            default: () => Math.floor(10 + Math.random() * 90)
         },
 
         status: {
             type: String,
             enum: [
                 "PENDING",
+                "PREPARING",
+                "READY",
+                "COMPLETED",
+                "CANCELLED",
                 "VALIDATED",
                 "REJECTED"
             ],
-            default: "PENDING"
+            default: "PREPARING"
         },
 
         billNumber: {
@@ -104,4 +163,9 @@ const orderSchema = new mongoose.Schema(
     }
 );
 
-module.exports = mongoose.model("Order", orderSchema);
+orderSchema.index({ userId: 1 });
+orderSchema.index({ userPhone: 1 });
+orderSchema.index({ status: 1 });
+orderSchema.index({ createdAt: -1 });
+
+module.exports = mongoose.model("Order", orderSchema);

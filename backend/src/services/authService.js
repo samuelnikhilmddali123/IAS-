@@ -1,4 +1,4 @@
-const bcrypt = require('bcryptjs');
+﻿const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
@@ -18,36 +18,48 @@ const registerAdmin = async (adminData) => {
     throw error;
   }
 
-  // Check dataStore
-  const existingByEmail = dataStore.getUserByEmail(email);
+  const cleanEmail = email.trim().toLowerCase();
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  if (mongoose.connection.readyState === 1) {
+    const existing = await Admin.findOne({ email: cleanEmail });
+    if (existing) {
+      const error = new Error('Admin already exists with this email');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const admin = await Admin.create({
+      name: name.trim(),
+      email: cleanEmail,
+      phone: phone.trim(),
+      password: hashedPassword,
+      pin: password,
+      role: 'SUPER_ADMIN'
+    });
+
+    return {
+      id: String(admin._id),
+      name: admin.name,
+      email: admin.email,
+      phone: admin.phone,
+      role: admin.role
+    };
+  }
+
+  // Fallback to dataStore if MongoDB is offline
+  const existingByEmail = dataStore.getUserByEmail(cleanEmail);
   if (existingByEmail && existingByEmail.role === 'admin') {
     const error = new Error('Admin already exists');
     error.statusCode = 409;
     throw error;
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  // If MongoDB connected, try Mongoose
-  if (mongoose.connection.readyState === 1) {
-    try {
-      const admin = await Admin.create({
-        name,
-        email,
-        phone,
-        password: hashedPassword
-      });
-      return { id: admin._id, name: admin.name, email: admin.email, phone: admin.phone };
-    } catch (e) {
-      console.warn('MongoDB admin create fallback:', e.message);
-    }
-  }
-
   const adminObj = {
     id: 'admin-' + Date.now(),
-    name,
-    email,
-    phone,
+    name: name.trim(),
+    email: cleanEmail,
+    phone: phone.trim(),
     pin: password,
     password: hashedPassword,
     role: 'admin'
@@ -56,30 +68,45 @@ const registerAdmin = async (adminData) => {
 };
 
 const loginAdmin = async (email, password) => {
-  // If MongoDB connected, try Mongoose
+  const cleanEmail = (email || '').trim().toLowerCase();
+
+  // 1. Check MongoDB
   if (mongoose.connection.readyState === 1) {
     try {
-      const admin = await Admin.findOne({ email });
+      const admin = await Admin.findOne({ email: cleanEmail });
       if (admin) {
-        const match = await bcrypt.compare(password, admin.password);
+        let match = false;
+        if (admin.password) {
+          match = await bcrypt.compare(password, admin.password);
+        }
+        if (!match && admin.pin) {
+          match = admin.pin === password;
+        }
+
         if (match) {
-          const token = jwt.sign({ id: admin._id, role: 'admin' }, JWT_SECRET, { expiresIn: '7d' });
+          const token = jwt.sign({ id: String(admin._id), role: 'admin' }, JWT_SECRET, { expiresIn: '7d' });
           return {
             token,
-            admin: { id: admin._id, name: admin.name, email: admin.email, phone: admin.phone }
+            admin: {
+              id: String(admin._id),
+              name: admin.name,
+              email: admin.email,
+              phone: admin.phone,
+              role: admin.role || 'admin'
+            }
           };
         }
       }
     } catch (e) {
-      console.warn('MongoDB admin login fallback:', e.message);
+      console.warn('[AUTH] MongoDB admin login check error:', e.message);
     }
   }
 
-  // DataStore check
-  const admin = (email === 'admin@canteen.gov.in' || email === 'admin@canteen.com' || email === 'admin') &&
+  // 2. Default credentials check or dataStore fallback
+  const isDefaultAdmin = (cleanEmail === 'admin@canteen.gov.in' || cleanEmail === 'admin@canteen.com' || cleanEmail === 'admin') &&
     (password === '123456' || password === 'admin123');
 
-  if (!admin) {
+  if (!isDefaultAdmin) {
     const error = new Error('Invalid admin email or password');
     error.statusCode = 401;
     throw error;
@@ -92,18 +119,19 @@ const loginAdmin = async (email, password) => {
       id: 'admin-1',
       name: 'Canteen Administrator',
       email: 'admin@canteen.gov.in',
-      phone: '9876543210'
+      phone: '9876543210',
+      role: 'SUPER_ADMIN'
     }
   };
 };
 
 const registerUser = async (userData) => {
-  const { name, email, phone, mobile, pin, password, avatar, designation, department } = userData;
+  const { name, email, phone, mobile, pin, password, avatar, designation, department, officerId } = userData;
 
   const officerName = (name || '').trim();
   const officerPhone = (phone || mobile || '').trim();
   const officerPin = (pin || password || '').trim();
-  const officerEmail = (email || '').trim() || (officerName.toLowerCase().replace(/\s+/g, '.') + '@gov.in');
+  const officerEmail = (email || '').trim().toLowerCase() || (officerName.toLowerCase().replace(/\s+/g, '.') + '@gov.in');
 
   if (!officerName) {
     const error = new Error('Full Name is required');
@@ -122,36 +150,86 @@ const registerUser = async (userData) => {
   }
 
   const hashedPassword = await bcrypt.hash(officerPin, 10);
+  const cleanPhone = officerPhone.replace(/\D/g, '').slice(-10);
+  const generatedOfficerId = officerId || ('GOI-DL-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000));
+  const defaultAvatar = avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80';
+  const defaultDesignation = designation || 'IAS Officer • Special Duty';
+  const defaultDepartment = department || 'Cabinet Secretariat • Government of India';
 
-  // If MongoDB connected, try Mongoose
+  let savedUser = null;
+
+  // 1. Primary: Save to MongoDB
   if (mongoose.connection.readyState === 1) {
     try {
-      const existing = await User.findOne({ $or: [{ phone: officerPhone }, { email: officerEmail }] });
-      if (!existing) {
-        await User.create({
+      // Find existing by phone or email
+      let mongoUser = await User.findOne({
+        $or: [
+          { phone: officerPhone },
+          { phone: new RegExp(cleanPhone + '$') },
+          { email: officerEmail }
+        ]
+      });
+
+      if (mongoUser) {
+        // Update existing user
+        mongoUser.name = officerName;
+        mongoUser.phone = officerPhone;
+        mongoUser.email = officerEmail;
+        mongoUser.password = hashedPassword;
+        mongoUser.pin = officerPin;
+        if (avatar) mongoUser.avatar = avatar;
+        if (designation) mongoUser.designation = designation;
+        if (department) mongoUser.department = department;
+        await mongoUser.save();
+      } else {
+        // Create new user in MongoDB
+        mongoUser = await User.create({
           name: officerName,
           email: officerEmail,
           phone: officerPhone,
-          password: hashedPassword
+          password: hashedPassword,
+          pin: officerPin,
+          avatar: defaultAvatar,
+          designation: defaultDesignation,
+          department: defaultDepartment,
+          officerId: generatedOfficerId,
+          role: 'user'
         });
       }
+
+      savedUser = {
+        id: String(mongoUser._id),
+        name: mongoUser.name,
+        email: mongoUser.email,
+        phone: mongoUser.phone,
+        pin: mongoUser.pin,
+        avatar: mongoUser.avatar,
+        designation: mongoUser.designation,
+        department: mongoUser.department,
+        officerId: mongoUser.officerId || generatedOfficerId
+      };
     } catch (e) {
-      console.warn('MongoDB user create fallback:', e.message);
+      console.warn('[AUTH] MongoDB user registration warning:', e.message);
     }
   }
 
-  // Save to persistent dataStore with selected profile photo!
-  const savedUser = dataStore.saveUser({
+  // 2. Synchronize to dataStore for seamless fallback
+  const fallbackUser = dataStore.saveUser({
     name: officerName,
     email: officerEmail,
     phone: officerPhone,
     pin: officerPin,
-    avatar: avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    designation: designation || 'IAS Officer • Special Duty',
-    department: department || 'Cabinet Secretariat • Government of India'
+    avatar: defaultAvatar,
+    designation: defaultDesignation,
+    department: defaultDepartment,
+    officerId: generatedOfficerId
   });
 
-  // 1. Generate one-time secure QR login token
+  if (!savedUser) {
+    savedUser = fallbackUser;
+  }
+
+  // 3. Generate one-time secure QR login token
   let qrInfo = null;
   try {
     qrInfo = await qrService.createQrLoginToken(savedUser);
@@ -159,7 +237,7 @@ const registerUser = async (userData) => {
     console.error('Error generating QR login token:', err);
   }
 
-  // 2. Dispatch QR message via ADMIN-CONFIGURED WhatsApp Number
+  // 4. Dispatch QR message via WhatsApp
   let whatsappInfo = null;
   if (qrInfo) {
     try {
@@ -213,29 +291,42 @@ const loginUser = async (loginIdentifier, passwordOrPin) => {
     throw error;
   }
 
-  // 1. Try search in persistent dataStore by phone or email
-  let user = dataStore.getUserByPhone(ident) || dataStore.getUserByEmail(ident);
+  const cleanPhone = ident.replace(/\D/g, '').slice(-10);
+  let user = null;
 
-  // 2. If not found in dataStore, try MongoDB if active
-  if (!user && mongoose.connection.readyState === 1) {
+  // 1. Primary: Search in MongoDB
+  if (mongoose.connection.readyState === 1) {
     try {
-      const mongoUser = await User.findOne({ $or: [{ phone: ident }, { email: ident }] });
+      const mongoUser = await User.findOne({
+        $or: [
+          { phone: ident },
+          ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : []),
+          { email: ident.toLowerCase() }
+        ]
+      });
+
       if (mongoUser) {
         user = {
           id: String(mongoUser._id),
           name: mongoUser.name,
           email: mongoUser.email,
           phone: mongoUser.phone,
-          pin: pin,
+          pin: mongoUser.pin,
+          password: mongoUser.password,
           avatar: mongoUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-          designation: 'IAS Officer • Special Duty',
-          department: 'Cabinet Secretariat • Government of India',
-          officerId: 'GOI-DL-2026-8941'
+          designation: mongoUser.designation || 'IAS Officer • Special Duty',
+          department: mongoUser.department || 'Cabinet Secretariat • Government of India',
+          officerId: mongoUser.officerId || ('GOI-DL-2026-' + String(mongoUser._id).slice(-4))
         };
       }
     } catch (e) {
-      console.warn('MongoDB user lookup fallback:', e.message);
+      console.warn('[AUTH] MongoDB user lookup warning:', e.message);
     }
+  }
+
+  // 2. Fallback: Search in dataStore
+  if (!user) {
+    user = dataStore.getUserByPhone(ident) || dataStore.getUserByEmail(ident);
   }
 
   if (!user) {
@@ -245,19 +336,17 @@ const loginUser = async (loginIdentifier, passwordOrPin) => {
   }
 
   // Verify PIN / Password
-  if (user.pin && user.pin !== pin) {
-    if (user.password) {
-      const match = await bcrypt.compare(pin, user.password);
-      if (!match) {
-        const error = new Error('Incorrect 6-digit PIN entered');
-        error.statusCode = 401;
-        throw error;
-      }
-    } else {
-      const error = new Error('Incorrect 6-digit PIN entered');
-      error.statusCode = 401;
-      throw error;
-    }
+  let isMatch = false;
+  if (user.pin && user.pin === pin) {
+    isMatch = true;
+  } else if (user.password) {
+    isMatch = await bcrypt.compare(pin, user.password);
+  }
+
+  if (!isMatch) {
+    const error = new Error('Incorrect 6-digit PIN entered');
+    error.statusCode = 401;
+    throw error;
   }
 
   const token = jwt.sign({ id: user.id, role: 'user' }, JWT_SECRET, { expiresIn: '30d' });
@@ -273,16 +362,11 @@ const loginUser = async (loginIdentifier, passwordOrPin) => {
       avatar: user.avatar,
       designation: user.designation,
       department: user.department,
-      officerId: user.officerId || ('GOI-DL-2026-' + user.id.slice(-4))
+      officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4))
     }
   };
 };
 
-/**
- * QR Code Login Handler:
- * Validates opaque app-only QR payload, enforces signature, 5-min expiry, and one-time use.
- * Returns authenticated session token.
- */
 const qrLogin = async (qrPayload) => {
   if (!qrPayload) {
     const error = new Error('QR payload is required');
@@ -297,33 +381,46 @@ const qrLogin = async (qrPayload) => {
     throw error;
   }
 
-  // Find user by userId or phone
-  let user = dataStore.getUserById(validation.userId) || dataStore.getUserByPhone(validation.userPhone);
+  let user = null;
 
-  if (!user && mongoose.connection.readyState === 1) {
+  // 1. Primary: Search in MongoDB
+  if (mongoose.connection.readyState === 1) {
     try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(validation.userId);
+      const cleanPhone = (validation.userPhone || '').replace(/\D/g, '').slice(-10);
+
       const mongoUser = await User.findOne({
-        $or: [{ _id: validation.userId }, { phone: validation.userPhone }]
+        $or: [
+          ...(isObjectId ? [{ _id: validation.userId }] : []),
+          { officerId: validation.userId },
+          { phone: validation.userPhone },
+          ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : [])
+        ]
       });
+
       if (mongoUser) {
         user = {
           id: String(mongoUser._id),
           name: mongoUser.name,
           email: mongoUser.email,
           phone: mongoUser.phone,
-          avatar: mongoUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-          designation: 'IAS Officer • Special Duty',
-          department: 'Cabinet Secretariat • Government of India',
-          officerId: 'GOI-DL-2026-8941'
+          avatar: mongoUser.avatar,
+          designation: mongoUser.designation,
+          department: mongoUser.department,
+          officerId: mongoUser.officerId
         };
       }
     } catch (e) {
-      console.warn('MongoDB user lookup fallback:', e.message);
+      console.warn('[AUTH] MongoDB QR lookup warning:', e.message);
     }
   }
 
+  // 2. Fallback: Search in dataStore
   if (!user) {
-    // If not found in store, create minimal officer object from token record
+    user = dataStore.getUserById(validation.userId) || dataStore.getUserByPhone(validation.userPhone);
+  }
+
+  if (!user) {
     user = {
       id: validation.userId || 'usr-' + Date.now(),
       name: validation.userName || 'IAS Officer',
@@ -349,13 +446,141 @@ const qrLogin = async (qrPayload) => {
       avatar: user.avatar,
       designation: user.designation,
       department: user.department,
-      officerId: user.officerId || ('GOI-DL-2026-' + user.id.slice(-4))
+      officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4))
     }
   };
 };
 
 const getAllUsers = async () => {
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const users = await User.find().sort({ createdAt: -1 });
+      if (users && users.length > 0) {
+        return users.map(u => ({
+          id: String(u._id),
+          _id: u._id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone,
+          mobile: u.phone,
+          avatar: u.avatar,
+          designation: u.designation,
+          department: u.department,
+          officerId: u.officerId || ('GOI-DL-2026-' + String(u._id).slice(-4)),
+          role: u.role || 'user',
+          createdAt: u.createdAt
+        }));
+      }
+    } catch (e) {
+      console.warn('[AUTH] MongoDB getAllUsers warning:', e.message);
+    }
+  }
+
   return dataStore.getUsers();
+};
+
+const getUserById = async (id) => {
+  if (!id) return null;
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(id);
+      const user = await User.findOne({
+        $or: [
+          ...(isObjectId ? [{ _id: id }] : []),
+          { officerId: id }
+        ]
+      });
+
+      if (user) {
+        return {
+          id: String(user._id),
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          mobile: user.phone,
+          avatar: user.avatar,
+          designation: user.designation,
+          department: user.department,
+          officerId: user.officerId || ('GOI-DL-2026-' + String(user._id).slice(-4)),
+          role: user.role || 'user',
+          createdAt: user.createdAt
+        };
+      }
+    } catch (e) {
+      console.warn('[AUTH] MongoDB getUserById warning:', e.message);
+    }
+  }
+
+  return dataStore.getUserById(id);
+};
+
+const updateUser = async (id, updates) => {
+  if (!id) return null;
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(id);
+      const user = await User.findOneAndUpdate(
+        {
+          $or: [
+            ...(isObjectId ? [{ _id: id }] : []),
+            { officerId: id }
+          ]
+        },
+        { $set: updates },
+        { new: true }
+      );
+
+      if (user) {
+        return {
+          id: String(user._id),
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          mobile: user.phone,
+          avatar: user.avatar,
+          designation: user.designation,
+          department: user.department,
+          officerId: user.officerId,
+          role: user.role || 'user',
+          updatedAt: user.updatedAt
+        };
+      }
+    } catch (e) {
+      console.warn('[AUTH] MongoDB updateUser warning:', e.message);
+    }
+  }
+
+  if (updates.phone) {
+    dataStore.updateUserPhone(id, updates.phone);
+  }
+  return dataStore.getUserById(id);
+};
+
+const deleteUser = async (id) => {
+  if (!id) return false;
+
+  let deleted = false;
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(id);
+      const res = await User.findOneAndDelete({
+        $or: [
+          ...(isObjectId ? [{ _id: id }] : []),
+          { officerId: id }
+        ]
+      });
+      if (res) deleted = true;
+    } catch (e) {
+      console.warn('[AUTH] MongoDB deleteUser warning:', e.message);
+    }
+  }
+
+  const jsonDeleted = dataStore.deleteUser(id);
+  return deleted || jsonDeleted;
 };
 
 module.exports = {
@@ -364,5 +589,8 @@ module.exports = {
   registerUser,
   loginUser,
   qrLogin,
-  getAllUsers
+  getAllUsers,
+  getUserById,
+  updateUser,
+  deleteUser
 };

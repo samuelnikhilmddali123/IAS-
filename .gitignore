@@ -1,0 +1,16 @@
+# Environment variables
+.env
+frontend/.env
+backend/.env
+
+# Dependencies
+node_modules/
+
+# Generated QR files
+backend/uploads/qr/
+
+# Baileys session/auth files
+backend/data/baileys_auth_info/
+
+# Temporary diff file
+diff.txt

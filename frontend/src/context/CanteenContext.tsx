@@ -1,17 +1,44 @@
 import React, { createContext, useContext, useState, useMemo, useEffect, useCallback } from 'react';
 import { Platform, NativeModules } from 'react-native';
+import Constants from 'expo-constants';
 import { ScreenTab, CategoryId, MenuItem, CartItem, PaymentMethod, BackendOrder } from '../types';
 
 export const getCandidateHosts = (): string[] => {
   const hosts: string[] = [];
 
+  // 1. Explicit EXPO_PUBLIC_API_URL if configured
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    try {
+      const match = process.env.EXPO_PUBLIC_API_URL.match(/:\/\/([^:/]+)/);
+      if (match && match[1]) {
+        hosts.push(match[1]);
+      }
+    } catch {}
+  }
+
+  // 2. Web browser location
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location?.hostname) {
       hosts.push(window.location.hostname);
     }
   }
 
-  // React Native NativeModules.SourceCode
+  // 3. Dynamic Metro Bundler Host from Expo Constants (auto-detects PC's Wi-Fi IP on physical devices)
+  try {
+    const debuggerHost =
+      Constants.expoConfig?.hostUri ||
+      (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost ||
+      (Constants as any)?.manifest?.debuggerHost ||
+      '';
+    if (debuggerHost) {
+      const host = debuggerHost.split(':')[0];
+      if (host && host !== 'localhost' && host !== '127.0.0.1') {
+        hosts.push(host);
+      }
+    }
+  } catch {}
+
+  // 4. React Native NativeModules.SourceCode
   try {
     const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
     const match = scriptURL.match(/:\/\/([^:/]+)/);
@@ -20,14 +47,18 @@ export const getCandidateHosts = (): string[] => {
     }
   } catch {}
 
-  // Developer machine's LAN IP (vital for physical mobile devices on same Wi-Fi/Ethernet)
-  hosts.push('10.241.83.177');
+  // 5. Developer machine's active Wi-Fi LAN IP (for physical mobile devices)
+  hosts.push('192.168.1.103');
 
+  // 6. Android Emulator loopback alias
   if (Platform.OS === 'android') {
     hosts.push('10.0.2.2');
   }
 
-  hosts.push('localhost', '127.0.0.1');
+  // 7. Localhost fallback (applicable for Web and local desktop testing)
+  if (Platform.OS === 'web') {
+    hosts.push('localhost', '127.0.0.1');
+  }
 
   return Array.from(new Set(hosts.filter(Boolean)));
 };

@@ -8,13 +8,14 @@ const connectDB = async () => {
 
     try {
         await mongoose.connect(mongoUri, {
-            serverSelectionTimeoutMS: 1500
+            serverSelectionTimeoutMS: 5000
         });
         isDbConnected = true;
         console.log("=======================================================");
         console.log("  DATABASE: MongoDB Connected Successfully!            ");
         console.log("  URI:      " + mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@'));
         console.log("=======================================================");
+        return true;
     } catch (error) {
         isDbConnected = false;
         if (isDefaultLocal) {
@@ -27,10 +28,24 @@ const connectDB = async () => {
             console.log("            a MongoDB Atlas URI to backend/.env        ");
             console.log("=======================================================");
         } else {
-            console.warn("MongoDB Atlas connection warning:", error.message);
+            console.warn("MongoDB connection warning:", error.message);
             console.log("Operating in fallback mode using backend/data/ storage.");
         }
+        return false;
     }
 };
 
+mongoose.connection.on("connected", () => {
+    isDbConnected = true;
+});
+
+mongoose.connection.on("error", (err) => {
+    console.error("MongoDB error event:", err.message);
+});
+
+mongoose.connection.on("disconnected", () => {
+    isDbConnected = false;
+});
+
 module.exports = connectDB;
+
