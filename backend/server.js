@@ -32,7 +32,8 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Static files for Admin Dashboard and Uploads (Dishes & QR images)
-app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/admin', express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Attempt MongoDB connection (graceful fallback if offline)
@@ -108,13 +109,8 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 
-// Admin Web App direct entry
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/admin/index.html'));
-});
-
-// Root Health & System Status
-app.get('/', (req, res) => {
+// System Health Status API endpoint
+app.get('/api/status', (req, res) => {
   const dbStatusMap = {
     0: 'Disconnected (Using Local JSON Storage Engine)',
     1: 'Connected (MongoDB Active)',
@@ -127,9 +123,17 @@ app.get('/', (req, res) => {
     port: PORT,
     database: dbStatusMap[mongoose.connection.readyState] || 'Local JSON Storage Engine Active',
     storage: 'Dual-Layer Store (Mongoose + backend/data/ JSON)',
-    adminDashboard: `http://localhost:${PORT}/admin`,
+    adminDashboard: `http://localhost:${PORT}/dashboard`,
     metrics: stats,
   });
+});
+
+// React SPA Catch-All Fallback Route
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/search-officer')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, 'public/index.html'));
 });
 
 // Global Error Handler
