@@ -1,0 +1,17 @@
+{
+  "adminWhatsAppNumber": "+919676482288",
+  "provider": "whatsapp_web",
+  "meta": {
+    "phoneNumberId": "",
+    "accessToken": "",
+    "businessAccountId": ""
+  },
+  "twilio": {
+    "accountSid": "",
+    "authToken": "",
+    "fromNumber": "whatsapp:+14155238886"
+  },
+  "connectionStatus": "Connected (+919676482288)",
+  "updatedAt": "2026-09-19T05:13:29.562Z",
+  "lastTestedAt": null
+}

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "ord-1789778230887",
+    "orderNumber": "ORD-2026-73997",
+    "userId": "GOI-DL-9876",
+    "userName": "Shri Rajesh Verma IAS",
+    "userPhone": "9876543210",
+    "userAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
+    "items": [
+      {
+        "id": "food-l1",
+        "name": "Executive South Indian Lunch",
+        "price": 95,
+        "quantity": 1
+      }
+    ],
+    "subtotal": 95,
+    "totalAmount": 95,
+    "paymentMethod": "online",
+    "orderNote": "",
+    "mealSlot": "LUNCH",
+    "status": "PREPARING",
+    "tokenNumber": 49,
+    "createdAt": "2026-09-19T00:37:10.887Z"
+  },
+  {
+    "id": "ord-1789776889390",
+    "orderNumber": "ORD-2026-78797",
+    "userId": "usr-1789776889365",
+    "userName": "Neerabh Kumar Prasad",
+    "userPhone": "9876543210",
+    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmaCfngRk2QYBYQ5xANia8WFZMVRN0QkjjFTcio1DtHA&s=10",
+    "items": [
+      {
+        "id": "food-b1",
+        "name": "Idli (2 pcs)",
+        "price": 25,
+        "quantity": 2
+      },
+      {
+        "id": "food-s3",
+        "name": "South Indian Filter Coffee",
+        "price": 20,
+        "quantity": 1
+      }
+    ],
+    "subtotal": 70,
+    "totalAmount": 70,
+    "paymentMethod": "online",
+    "orderNote": "Less spicy sambar please",
+    "mealSlot": "Breakfast",
+    "status": "PREPARING",
+    "tokenNumber": 91,
+    "createdAt": "2026-09-19T00:14:49.390Z"
+  }
+]

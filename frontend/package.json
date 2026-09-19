@@ -1,0 +1,32 @@
+{
+  "name": "restaurant",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@expo/metro-runtime": "~57.0.15",
+    "@expo/vector-icons": "^15.0.2",
+    "@types/react": "~19.2.4",
+    "expo": "~57.0.23",
+    "expo-camera": "~57.0.5",
+    "expo-screen-orientation": "~57.0.2",
+    "expo-status-bar": "~57.0.1",
+    "jsqr": "^1.4.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "^0.21.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "api": "node server.js",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/react-native": "^0.72.8"
+  }
+}

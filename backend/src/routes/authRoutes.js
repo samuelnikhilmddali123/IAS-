@@ -1,0 +1,186 @@
+const express = require('express');
+const {
+  registerAdmin,
+  loginAdmin,
+  registerUser,
+  loginUser,
+  qrLogin,
+  getAllUsers
+} = require('../services/authService');
+const userAuth = require('../middleware/userAuthMiddleware');
+const dataStore = require('../storage/dataStore');
+
+const router = express.Router();
+
+// Admin Auth
+router.post('/admin/register', async (req, res) => {
+  try {
+    const admin = await registerAdmin(req.body);
+    res.status(201).json({ success: true, message: 'Admin registered successfully', admin });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/admin/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await loginAdmin(email, password);
+    res.status(200).json({ success: true, message: 'Admin login successful', ...result });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+});
+
+// Officer / User Auth
+const handleUserRegister = async (req, res) => {
+  try {
+    const result = await registerUser(req.body);
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully. One-time QR login code dispatched via Admin WhatsApp.',
+      ...result
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+const handleUserLogin = async (req, res) => {
+  try {
+    const ident = req.body.phone || req.body.mobile || req.body.email;
+    const pin = req.body.pin || req.body.password;
+    const result = await loginUser(ident, pin);
+    res.status(200).json({
+      success: true,
+      message: 'Officer authenticated successfully',
+      ...result
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+const handleQrLogin = async (req, res) => {
+  try {
+    const qrPayload = req.body.qrPayload || req.body.payload || req.body.token;
+    if (!qrPayload) {
+      return res.status(400).json({
+        success: false,
+        message: 'Scanned QR payload is required'
+      });
+    }
+
+    const result = await qrLogin(qrPayload);
+    res.status(200).json({
+      success: true,
+      message: 'QR login authenticated successfully',
+      ...result
+    });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+router.post('/user/register', handleUserRegister);
+router.post('/register', handleUserRegister);
+
+router.post('/user/login', handleUserLogin);
+router.post('/login', handleUserLogin);
+
+// QR Login Endpoints
+router.post('/qr-login', handleQrLogin);
+router.post('/user/qr-login', handleQrLogin);
+
+// Current Authenticated Officer Profile Endpoint
+const handleMe = async (req, res) => {
+  try {
+    const user = dataStore.getUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Officer profile not found' });
+    }
+    res.status(200).json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        mobile: user.phone,
+        avatar: user.avatar,
+        designation: user.designation,
+        department: user.department,
+        officerId: user.officerId || ('GOI-DL-2026-' + user.id.slice(-4))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+router.get('/me', userAuth, handleMe);
+router.get('/user/me', userAuth, handleMe);
+
+// List all registered officers (for Admin Dashboard)
+router.get('/users', async (req, res) => {
+  try {
+    const users = await getAllUsers();
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      users
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Update Officer Phone Number / Profile (Admin Dashboard)
+router.put('/users/:id', async (req, res) => {
+  try {
+    const { phone, name, email, designation, department } = req.body;
+    const user = dataStore.getUserById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Officer not found' });
+    }
+    if (phone) {
+      dataStore.updateUserPhone(user.id, phone);
+    }
+    const updated = dataStore.getUserById(user.id);
+    res.status(200).json({
+      success: true,
+      message: 'Officer phone number updated successfully',
+      user: updated
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Delete Officer (Admin Dashboard)
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const success = dataStore.deleteUser(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, message: 'Officer not found' });
+    }
+    res.status(200).json({ success: true, message: 'Officer removed successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+module.exports = router;
+
