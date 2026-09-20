@@ -119,6 +119,16 @@ const orderSchema = new mongoose.Schema(
             default: "online"
         },
 
+        paymentStatus: {
+            type: String,
+            enum: [
+                "PAYMENT_PENDING",
+                "PAID"
+            ],
+            default: "PAYMENT_PENDING",
+            index: true
+        },
+
         orderNote: {
             type: String,
             default: ""
@@ -166,6 +176,7 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ userId: 1 });
 orderSchema.index({ userPhone: 1 });
 orderSchema.index({ status: 1 });
+orderSchema.index({ paymentStatus: 1 });
 orderSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Order", orderSchema);

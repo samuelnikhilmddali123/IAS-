@@ -5,6 +5,9 @@ const {
   getOrderById,
   getAllOrdersForAdmin,
   updateOrderStatus,
+  updatePaymentStatus,
+  getUnpaidOrders,
+  getRestaurantPaymentQr,
   getAdminStats
 } = require('../services/orderService');
 
@@ -16,11 +19,46 @@ router.post('/', async (req, res) => {
     const order = await createOrder(req.body);
     res.status(201).json({
       success: true,
-      message: 'Order placed successfully',
+      message: 'Order placed successfully (Payment Pending)',
       order
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Get user's unpaid orders and outstanding dues
+router.get('/unpaid', async (req, res) => {
+  try {
+    const userIdOrPhone = req.query.userId || req.query.phone || req.query.mobile;
+    const result = await getUnpaidOrders(userIdOrPhone);
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Get Restaurant / Hotel payment QR code (dynamic UPI payload)
+router.get('/restaurant-qr', async (req, res) => {
+  try {
+    const amount = Number(req.query.amount) || 0;
+    const orderIds = req.query.orderIds ? String(req.query.orderIds).split(',') : [];
+    const qrData = await getRestaurantPaymentQr(amount, orderIds);
+    res.status(200).json({
+      success: true,
+      ...qrData
+    });
+  } catch (error) {
+    res.status(500).json({
       success: false,
       message: error.message
     });
@@ -49,7 +87,8 @@ router.get('/', async (req, res) => {
 router.get('/admin/all', async (req, res) => {
   try {
     const filter = {
-      status: req.query.status
+      status: req.query.status,
+      paymentStatus: req.query.paymentStatus
     };
     const orders = await getAllOrdersForAdmin(filter);
     res.status(200).json({
@@ -104,6 +143,30 @@ const handleStatusUpdate = async (req, res) => {
 
 router.put('/admin/:id/status', handleStatusUpdate);
 router.put('/:id/status', handleStatusUpdate);
+
+// Update payment status (Admin or settlement: PAYMENT_PENDING, PAID)
+const handlePaymentStatusUpdate = async (req, res) => {
+  try {
+    const { paymentStatus } = req.body;
+    if (!paymentStatus) {
+      return res.status(400).json({ success: false, message: 'paymentStatus is required' });
+    }
+    const order = await updatePaymentStatus(req.params.id, paymentStatus.toUpperCase());
+    res.status(200).json({
+      success: true,
+      message: `Order payment status updated to ${paymentStatus}`,
+      order
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+router.put('/admin/:id/payment-status', handlePaymentStatusUpdate);
+router.put('/:id/payment-status', handlePaymentStatusUpdate);
 
 // Get single order details
 router.get('/:id', async (req, res) => {

@@ -57,6 +57,10 @@ export const HomeScreen: React.FC = () => {
     isMenuLoading,
     fetchMenu,
     userProfile,
+    totalCartItems,
+    cartSubtotal,
+    unpaidOrders,
+    unpaidTotalAmount,
   } = useCanteen();
   const [greeting, setGreeting] = React.useState<string>(getTimeBasedGreeting);
 
@@ -129,6 +133,62 @@ export const HomeScreen: React.FC = () => {
         </View>
       </View>
 
+      {/* 1.5 Quick Action Bar: Cart & Payment Status */}
+      <View style={styles.quickActionBar}>
+        <TouchableOpacity
+          style={styles.cartBannerCard}
+          onPress={() => setActiveTab('orders')}
+          activeOpacity={0.85}
+        >
+          <View style={styles.cartBannerLeft}>
+            <View style={styles.cartIconCircle}>
+              <AppIcon name="cart-outline" size={17} color="#ffffff" />
+              {totalCartItems > 0 && (
+                <View style={styles.cartCircleBadge}>
+                  <Text style={styles.cartCircleBadgeText}>{totalCartItems}</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.cartBannerTexts}>
+              <Text style={styles.cartBannerTitle}>Food Cart</Text>
+              <Text style={styles.cartBannerSubtitle}>
+                {totalCartItems === 0
+                  ? '0 items added'
+                  : `${totalCartItems} items • ₹${cartSubtotal} total`}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.cartBannerCta}>
+            <Text style={styles.cartBannerCtaText}>View Cart</Text>
+            <AppIcon name="arrow-forward" size={13} color="#0d3829" style={{ marginLeft: 4 }} />
+          </View>
+        </TouchableOpacity>
+
+        {unpaidOrders.length > 0 && (
+          <TouchableOpacity
+            style={styles.paymentBannerCard}
+            onPress={() => setActiveTab('payment')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.cartBannerLeft}>
+              <View style={styles.paymentIconCircle}>
+                <AppIcon name="qr-code-outline" size={17} color="#ffffff" />
+              </View>
+              <View style={styles.cartBannerTexts}>
+                <Text style={styles.paymentBannerTitle}>Payment Pending</Text>
+                <Text style={styles.paymentBannerSubtitle}>
+                  {unpaidOrders.length} {unpaidOrders.length === 1 ? 'order' : 'orders'} • ₹{unpaidTotalAmount} unpaid
+                </Text>
+              </View>
+            </View>
+            <View style={styles.paymentBannerCta}>
+              <Text style={styles.paymentBannerCtaText}>Pay Bill</Text>
+              <AppIcon name="arrow-forward" size={13} color="#b45309" style={{ marginLeft: 4 }} />
+            </View>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* 2. Category Filter Pills */}
       <CategoryFilterBar />
 
@@ -144,14 +204,30 @@ export const HomeScreen: React.FC = () => {
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.viewFullMenuBtn}
-              onPress={() => setActiveTab('menu')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.viewFullMenuText}>View Full Menu</Text>
-              <AppIcon name="arrow-forward" size={13} color="#0f172a" style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
+            <View style={styles.headerButtonsRow}>
+              <TouchableOpacity
+                style={styles.cartHeaderBtn}
+                onPress={() => setActiveTab('orders')}
+                activeOpacity={0.7}
+              >
+                <AppIcon name="cart-outline" size={15} color="#0d3829" style={{ marginRight: 6 }} />
+                <Text style={styles.cartHeaderBtnText}>Cart</Text>
+                {totalCartItems > 0 && (
+                  <View style={styles.cartHeaderBadge}>
+                    <Text style={styles.cartHeaderBadgeText}>{totalCartItems}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.viewFullMenuBtn}
+                onPress={() => setActiveTab('menu')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.viewFullMenuText}>View Full Menu</Text>
+                <AppIcon name="arrow-forward" size={13} color="#0f172a" style={{ marginLeft: 4 }} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Backend Error / Loading / Menu Items */}
@@ -456,5 +532,161 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
     marginTop: 8,
+  },
+  quickActionBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: 4,
+    gap: 12,
+  },
+  cartBannerCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  paymentBannerCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  cartBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cartIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0a3d31',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  cartCircleBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#e11d48',
+    borderRadius: 999,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  cartCircleBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  cartBannerTexts: {
+    justifyContent: 'center',
+  },
+  cartBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0a3d31',
+  },
+  cartBannerSubtitle: {
+    fontSize: 11,
+    color: '#15803d',
+    fontWeight: '500',
+  },
+  cartBannerCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  cartBannerCtaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0a3d31',
+  },
+  paymentIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#d97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paymentBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  paymentBannerSubtitle: {
+    fontSize: 11,
+    color: '#b45309',
+    fontWeight: '500',
+  },
+  paymentBannerCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  paymentBannerCtaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  headerButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cartHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  cartHeaderBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0d3829',
+  },
+  cartHeaderBadge: {
+    backgroundColor: '#e11d48',
+    borderRadius: 999,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    marginLeft: 5,
+  },
+  cartHeaderBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '700',
   },
 });

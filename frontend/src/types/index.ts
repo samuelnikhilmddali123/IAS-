@@ -1,4 +1,4 @@
-export type ScreenTab = 'home' | 'menu' | 'orders' | 'profile' | 'settings' | 'help';
+export type ScreenTab = 'home' | 'menu' | 'orders' | 'payment' | 'profile' | 'settings' | 'help';
 
 export type CategoryId =
   | 'all'
@@ -60,6 +60,7 @@ export interface BackendOrder {
   totalAmount: number;
   subtotal: number;
   paymentMethod: string;
+  paymentStatus?: 'PAYMENT_PENDING' | 'PAID';
   orderNote?: string;
   mealSlot?: string;
   status: 'PENDING' | 'PREPARING' | 'READY' | 'DELIVERED' | 'CANCELLED';

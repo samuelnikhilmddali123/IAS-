@@ -485,6 +485,9 @@ const dataStore = {
     if (filter.status) {
       orders = orders.filter(o => o.status === filter.status);
     }
+    if (filter.paymentStatus) {
+      orders = orders.filter(o => (o.paymentStatus || 'PAYMENT_PENDING') === filter.paymentStatus);
+    }
     return orders;
   },
 
@@ -508,6 +511,7 @@ const dataStore = {
       subtotal: Number(orderData.subtotal || orderData.totalAmount) || 0,
       totalAmount: Number(orderData.totalAmount || orderData.subtotal) || 0,
       paymentMethod: orderData.paymentMethod || 'online',
+      paymentStatus: orderData.paymentStatus || 'PAYMENT_PENDING',
       orderNote: orderData.orderNote || '',
       mealSlot: orderData.mealSlot || 'General',
       status: 'PREPARING', // Default to PREPARING for good live feedback
@@ -528,6 +532,21 @@ const dataStore = {
     orders[idx].updatedAt = new Date().toISOString();
     writeJSON(ORDERS_FILE, orders);
     return orders[idx];
+  },
+
+  updatePaymentStatus(orderId, paymentStatus) {
+    const orders = readJSON(ORDERS_FILE);
+    const idx = orders.findIndex(o => o.id === orderId || o.orderNumber === orderId || String(o._id) === orderId);
+    if (idx === -1) return null;
+    orders[idx].paymentStatus = paymentStatus;
+    orders[idx].paymentUpdatedAt = new Date().toISOString();
+    orders[idx].updatedAt = new Date().toISOString();
+    writeJSON(ORDERS_FILE, orders);
+    return orders[idx];
+  },
+
+  getUnpaidOrders(filter = {}) {
+    return this.getOrders({ ...filter, paymentStatus: 'PAYMENT_PENDING' });
   },
 
   // Admin Stats

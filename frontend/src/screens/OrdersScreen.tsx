@@ -37,6 +37,7 @@ export const OrdersScreen: React.FC = () => {
     fetchOrderHistory,
     isOrderHistoryLoading,
     lastPlacedOrder,
+    logout,
   } = useCanteen();
 
   const handlePlaceOrderClick = async () => {
@@ -48,12 +49,24 @@ export const OrdersScreen: React.FC = () => {
     }
   };
 
-  const handleOrderDone = () => {
+  const handleOrderDoneAndLogout = React.useCallback(() => {
     setIsOrderSuccessModalOpen(false);
     clearCart();
     setOrderStep(1);
-    setActiveTab('home');
-  };
+    logout();
+  }, [clearCart, logout, setIsOrderSuccessModalOpen, setOrderStep]);
+
+  React.useEffect(() => {
+    let timer: any;
+    if (isOrderSuccessModalOpen) {
+      timer = setTimeout(() => {
+        handleOrderDoneAndLogout();
+      }, 5000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isOrderSuccessModalOpen, handleOrderDoneAndLogout]);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -194,9 +207,18 @@ export const OrdersScreen: React.FC = () => {
                     ) : null}
 
                     <View style={styles.historyFooterRow}>
-                      <Text style={styles.historyPayMethod}>
-                        Paid via <Text style={{ fontWeight: '700' }}>{ord.paymentMethod.toUpperCase()}</Text>
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={styles.historyPayMethod}>Payment: </Text>
+                        <Text
+                          style={{
+                            fontWeight: '700',
+                            fontSize: 11,
+                            color: (ord.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '#15803d' : '#b45309',
+                          }}
+                        >
+                          {(ord.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '✓ PAID' : '⏳ PAYMENT PENDING'}
+                        </Text>
+                      </View>
                       <Text style={styles.historyTotalAmount}>
                         Total: <Text style={styles.historyTotalBold}>₹{ord.totalAmount}</Text>
                       </Text>
@@ -210,7 +232,7 @@ export const OrdersScreen: React.FC = () => {
       ) : (
         /* ==================== CHECKOUT FLOW ==================== */
         <>
-      {/* 1. Stepper Bar (1. Your Order -> 2. Payment -> 3. Confirmation) */}
+      {/* 1. Stepper Bar (1. Your Order -> 2. Kitchen Submission -> 3. Confirmation) */}
       <View style={styles.stepperContainer}>
         <View style={styles.stepItem}>
           <View style={[styles.stepCircle, orderStep >= 1 && styles.stepCircleActive]}>
@@ -228,7 +250,7 @@ export const OrdersScreen: React.FC = () => {
             <Text style={[styles.stepNumber, orderStep >= 2 && styles.stepNumberActive]}>2</Text>
           </View>
           <Text style={[styles.stepLabel, orderStep >= 2 && styles.stepLabelActive]}>
-            Payment
+            Submit Order
           </Text>
         </View>
 
@@ -246,8 +268,8 @@ export const OrdersScreen: React.FC = () => {
 
       {/* 2. Page Header */}
       <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>Your Order</Text>
-        <Text style={styles.pageSubtitle}>Review your items and proceed to payment</Text>
+        <Text style={styles.pageTitle}>Review & Place Order</Text>
+        <Text style={styles.pageSubtitle}>Zero upfront payment. Settle your bill post-meal via Restaurant QR.</Text>
       </View>
 
       {/* 3. Main Order Columns */}
@@ -387,62 +409,25 @@ export const OrdersScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Select Payment Method */}
-          <View style={styles.paymentCard}>
-            <View style={styles.paymentHeader}>
-              <AppIcon name="card-outline" size={16} color="#0f172a" style={{ marginRight: 6 }} />
-              <Text style={styles.paymentTitle}>Select Payment Method</Text>
+          {/* Post-Food Payment Settlement Notice (No card/COD at checkout) */}
+          <View style={styles.paymentNoticeCard}>
+            <View style={styles.paymentNoticeHeader}>
+              <View style={styles.paymentNoticeIconBox}>
+                <AppIcon name="restaurant" size={17} color="#0a3d31" />
+              </View>
+              <View style={styles.paymentNoticeTexts}>
+                <Text style={styles.paymentNoticeTitle}>Order Now • Pay Later</Text>
+                <Text style={styles.paymentNoticeSubtitle}>
+                  Zero upfront payment required at checkout.
+                </Text>
+              </View>
             </View>
-
-            <View style={styles.paymentOptions}>
-              {/* Option 1: Online */}
-              <TouchableOpacity
-                style={[
-                  styles.paymentOption,
-                  paymentMethod === 'online' && styles.paymentOptionActive,
-                ]}
-                onPress={() => setPaymentMethod('online')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.radioOuter}>
-                  {paymentMethod === 'online' && <View style={styles.radioInner} />}
-                </View>
-                <View style={styles.methodIconBox}>
-                  <AppIcon name="card" size={16} color="#0e382b" />
-                </View>
-                <View style={styles.methodTextBox}>
-                  <Text style={styles.methodTitle}>Online Payment</Text>
-                  <Text style={styles.methodSub}>
-                    UPI, Debit Card, Credit Card, Net Banking
-                  </Text>
-                </View>
-                <AppIcon name="chevron-forward" size={15} color="#94a3b8" />
-              </TouchableOpacity>
-
-              {/* Option 2: Cash on Delivery */}
-              <TouchableOpacity
-                style={[
-                  styles.paymentOption,
-                  paymentMethod === 'cod' && styles.paymentOptionActive,
-                ]}
-                onPress={() => setPaymentMethod('cod')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.radioOuter}>
-                  {paymentMethod === 'cod' && <View style={styles.radioInner} />}
-                </View>
-                <View style={styles.methodIconBox}>
-                  <AppIcon name="cash-outline" size={16} color="#0e382b" />
-                </View>
-                <View style={styles.methodTextBox}>
-                  <Text style={styles.methodTitle}>Cash on Delivery</Text>
-                  <Text style={styles.methodSub}>
-                    Pay at counter while collecting food
-                  </Text>
-                </View>
-                <AppIcon name="chevron-forward" size={15} color="#94a3b8" />
-              </TouchableOpacity>
+            <View style={styles.paymentPendingPill}>
+              <Text style={styles.paymentPendingPillText}>PAYMENT STATUS: PAYMENT PENDING</Text>
             </View>
+            <Text style={styles.paymentNoticeDesc}>
+              This order will immediately enter the kitchen queue. You can place multiple orders during your dining visit. After finishing your meal, settle your total bill via the Restaurant QR code in the Payment section.
+            </Text>
           </View>
 
           {/* Place Order Button */}
@@ -453,21 +438,20 @@ export const OrdersScreen: React.FC = () => {
             activeOpacity={0.85}
           >
             <Text style={styles.placeOrderBtnText}>
-              {isSubmitting ? 'Placing Order...' : 'Place Order'}
+              {isSubmitting ? 'Sending Order to Kitchen...' : 'Checkout Order (Pay Later)'}
             </Text>
             <AppIcon name="arrow-forward" size={16} color="#ffffff" style={{ marginLeft: 8 }} />
           </TouchableOpacity>
 
           <Text style={styles.disclaimerText}>
-            By placing the order, you agree to the canteen{' '}
-            <Text style={styles.disclaimerLink}>terms and conditions</Text>.
+            Order is verified and recorded on the server before session completion.
           </Text>
         </View>
       </View>
       </>
       )}
 
-      {/* Order Success Modal */}
+      {/* Order Success & Immediate Logout Modal */}
       <Modal
         visible={isOrderSuccessModalOpen}
         transparent
@@ -482,31 +466,30 @@ export const OrdersScreen: React.FC = () => {
             <Text style={styles.tokenBadge}>Token: #{lastPlacedOrder?.tokenNumber ? `CS-${lastPlacedOrder.tokenNumber}` : 'CS-8429'}</Text>
             <Text style={styles.modalMessage}>
               Your order <Text style={{ fontWeight: '700' }}>{lastPlacedOrder?.orderNumber || ''}</Text> has been submitted to the Canteen Kitchen.{'\n'}
-              Estimated prep time: <Text style={{ fontWeight: '700' }}>10-15 mins</Text>
+              Kitchen status: <Text style={{ fontWeight: '700', color: '#0a3d31' }}>PREPARING</Text>
             </Text>
             <View style={styles.modalDetailsBox}>
               <Text style={styles.modalDetailLine}>
-                Total Paid: <Text style={{ fontWeight: '700' }}>₹{lastPlacedOrder?.totalAmount || cartSubtotal}</Text>
+                Order Total: <Text style={{ fontWeight: '700' }}>₹{lastPlacedOrder?.totalAmount || cartSubtotal}</Text>
               </Text>
               <Text style={styles.modalDetailLine}>
-                Method: <Text style={{ fontWeight: '700' }}>{paymentMethod === 'online' ? 'UPI / Online' : 'Cash at Counter'}</Text>
+                Payment Status: <Text style={{ fontWeight: '700', color: '#b45309' }}>PAYMENT PENDING</Text>
               </Text>
             </View>
+
+            <View style={styles.logoutNoticeBox}>
+              <AppIcon name="log-out-outline" size={17} color="#0a3d31" style={{ marginRight: 6 }} />
+              <Text style={styles.logoutNoticeText}>
+                Your order is saved. You are being logged out now. Log in with your QR code later to order more or settle your payment.
+              </Text>
+            </View>
+
             <TouchableOpacity
-              style={styles.modalTrackBtn}
-              onPress={() => {
-                setIsOrderSuccessModalOpen(false);
-                clearCart();
-                setOrderStep(1);
-                setViewMode('history');
-                fetchOrderHistory();
-              }}
-              activeOpacity={0.8}
+              style={styles.modalDoneBtn}
+              onPress={handleOrderDoneAndLogout}
+              activeOpacity={0.85}
             >
-              <Text style={styles.modalTrackBtnText}>Track in Order History ➔</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalDoneBtn} onPress={handleOrderDone}>
-              <Text style={styles.modalDoneBtnText}>Done & Return Home</Text>
+              <Text style={styles.modalDoneBtnText}>Sign Out & Return to Login ➔</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -861,69 +844,79 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
   },
-  paymentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  paymentTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  paymentOptions: {
-    gap: 10,
-  },
-  paymentOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 10,
+  paymentNoticeCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    padding: 14,
+    marginBottom: 16,
   },
-  paymentOptionActive: {
-    borderColor: '#0d3829',
-    backgroundColor: '#f8fafc',
-  },
-  radioOuter: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#0d3829',
+  paymentNoticeHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
+    marginBottom: 8,
   },
-  radioInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#0d3829',
-  },
-  methodIconBox: {
+  paymentNoticeIconBox: {
     width: 32,
     height: 32,
-    borderRadius: 6,
+    borderRadius: 8,
     backgroundColor: '#eef7f2',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
-  methodTextBox: {
+  paymentNoticeTexts: {
     flex: 1,
   },
-  methodTitle: {
-    fontSize: 12,
+  paymentNoticeTitle: {
+    fontSize: 13,
     fontWeight: '700',
     color: '#0f172a',
   },
-  methodSub: {
-    fontSize: 10,
+  paymentNoticeSubtitle: {
+    fontSize: 11,
     color: '#64748b',
     marginTop: 1,
+  },
+  paymentPendingPill: {
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    alignSelf: 'flex-start',
+    marginVertical: 8,
+  },
+  paymentPendingPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#b45309',
+    letterSpacing: 0.5,
+  },
+  paymentNoticeDesc: {
+    fontSize: 11,
+    color: '#475569',
+    lineHeight: 16,
+  },
+  logoutNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 16,
+    width: '100%',
+  },
+  logoutNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#166534',
+    lineHeight: 15,
+    fontWeight: '500',
   },
   placeOrderBtn: {
     flexDirection: 'row',

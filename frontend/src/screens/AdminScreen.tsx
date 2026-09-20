@@ -243,6 +243,22 @@ export const AdminScreen: React.FC = () => {
     }
   };
 
+  // Change order payment status
+  const handleUpdatePaymentStatus = async (orderId: string, newPaymentStatus: string) => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/orders/${orderId}/payment-status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentStatus: newPaymentStatus }),
+      });
+      if (res.ok) {
+        await loadDashboardData();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   // Add Dish
   const handleCreateDish = async () => {
     if (!dishForm.name.trim() || !dishForm.price.trim()) {
@@ -490,24 +506,45 @@ export const AdminScreen: React.FC = () => {
                             <Text style={styles.orderIdText}>{ord.orderNumber}</Text>
                           </View>
 
-                          <View
-                            style={[
-                              styles.statusBadge,
-                              isReady && styles.badgeReady,
-                              isDelivered && styles.badgeDelivered,
-                              isCancelled && styles.badgeCancelled,
-                            ]}
-                          >
-                            <Text
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <View
                               style={[
-                                styles.statusBadgeText,
-                                isReady && styles.badgeTextReady,
-                                isDelivered && styles.badgeTextDelivered,
-                                isCancelled && styles.badgeTextCancelled,
+                                styles.statusBadge,
+                                (ord.paymentStatus || 'PAYMENT_PENDING') === 'PAID'
+                                  ? { backgroundColor: '#dcfce7', borderColor: '#bbf7d0' }
+                                  : { backgroundColor: '#fef3c7', borderColor: '#fde68a' },
+                                { marginRight: 6 }
                               ]}
                             >
-                              {statusUpper}
-                            </Text>
+                              <Text
+                                style={[
+                                  styles.statusBadgeText,
+                                  { color: (ord.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '#15803d' : '#b45309' }
+                                ]}
+                              >
+                                {(ord.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '✓ PAID' : '⏳ UNPAID'}
+                              </Text>
+                            </View>
+
+                            <View
+                              style={[
+                                styles.statusBadge,
+                                isReady && styles.badgeReady,
+                                isDelivered && styles.badgeDelivered,
+                                isCancelled && styles.badgeCancelled,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.statusBadgeText,
+                                  isReady && styles.badgeTextReady,
+                                  isDelivered && styles.badgeTextDelivered,
+                                  isCancelled && styles.badgeTextCancelled,
+                                ]}
+                              >
+                                {statusUpper}
+                              </Text>
+                            </View>
                           </View>
                         </View>
 
@@ -552,6 +589,22 @@ export const AdminScreen: React.FC = () => {
                           <Text style={styles.footerTotal}>Total: ₹{ord.totalAmount}</Text>
 
                           <View style={styles.statusButtonsGroup}>
+                            {(ord.paymentStatus || 'PAYMENT_PENDING') !== 'PAID' ? (
+                              <TouchableOpacity
+                                style={[styles.actionBtn, { backgroundColor: '#15803d' }]}
+                                onPress={() => handleUpdatePaymentStatus(ord.id || ord.orderNumber, 'PAID')}
+                              >
+                                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Mark Paid ✓</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <TouchableOpacity
+                                style={[styles.actionBtn, { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' }]}
+                                onPress={() => handleUpdatePaymentStatus(ord.id || ord.orderNumber, 'PAYMENT_PENDING')}
+                              >
+                                <Text style={{ color: '#64748b', fontSize: 10, fontWeight: '600' }}>Revert Unpaid</Text>
+                              </TouchableOpacity>
+                            )}
+
                             {statusUpper !== 'PREPARING' && (
                               <TouchableOpacity
                                 style={[styles.actionBtn, styles.btnPrepare]}

@@ -167,6 +167,10 @@ interface CanteenContextType {
   orderHistory: BackendOrder[];
   isOrderHistoryLoading: boolean;
   fetchOrderHistory: () => Promise<void>;
+  unpaidOrders: BackendOrder[];
+  unpaidTotalAmount: number;
+  isUnpaidLoading: boolean;
+  fetchUnpaidOrders: () => Promise<BackendOrder[]>;
   lastPlacedOrder: BackendOrder | null;
 }
 
@@ -205,6 +209,11 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isOrderHistoryLoading, setIsOrderHistoryLoading] = useState<boolean>(false);
   const [lastPlacedOrder, setLastPlacedOrder] = useState<BackendOrder | null>(null);
   const [lastDispatchedQr, setLastDispatchedQr] = useState<{ qrImage?: string; qrPayload?: string; fromWhatsApp?: string } | null>(null);
+
+  // Unpaid Orders & Post-Food Payment
+  const [unpaidOrders, setUnpaidOrders] = useState<BackendOrder[]>([]);
+  const [unpaidTotalAmount, setUnpaidTotalAmount] = useState<number>(0);
+  const [isUnpaidLoading, setIsUnpaidLoading] = useState<boolean>(false);
 
   // Fetch Menu from Backend
   const fetchMenu = useCallback(async () => {
@@ -266,6 +275,33 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [userProfile.mobile]);
 
+  // Fetch Unpaid Orders & Outstanding dues from Backend
+  const fetchUnpaidOrders = useCallback(async (): Promise<BackendOrder[]> => {
+    if (!userProfile.mobile && !userProfile.id) return [];
+    setIsUnpaidLoading(true);
+    try {
+      const phoneClean = (userProfile.mobile || '').replace(/\D/g, '');
+      const url = `/api/orders/unpaid?userId=${encodeURIComponent(userProfile.id || '')}&phone=${encodeURIComponent(phoneClean)}`;
+      const res = await fetchWithFallback(url, { headers: { Accept: 'application/json' } }, 5000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.orders)) {
+          setUnpaidOrders(data.orders);
+          setUnpaidTotalAmount(Number(data.totalOutstanding) || 0);
+          return data.orders;
+        }
+      }
+      setUnpaidOrders([]);
+      setUnpaidTotalAmount(0);
+      return [];
+    } catch (err) {
+      console.error('[UNPAID] Fetch unpaid orders error:', err);
+      return [];
+    } finally {
+      setIsUnpaidLoading(false);
+    }
+  }, [userProfile.mobile, userProfile.id]);
+
   useEffect(() => {
     fetchMenu();
   }, [fetchMenu]);
@@ -273,8 +309,9 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (isAuthenticated) {
       fetchOrderHistory();
+      fetchUnpaidOrders();
     }
-  }, [isAuthenticated, fetchOrderHistory]);
+  }, [isAuthenticated, fetchOrderHistory, fetchUnpaidOrders]);
 
   // Login Handler (strictly authenticates with Backend API)
   const login = async (
@@ -415,6 +452,8 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       email: '',
     });
     setCart([]);
+    setUnpaidOrders([]);
+    setUnpaidTotalAmount(0);
     setActiveTab('home');
   };
 
@@ -467,7 +506,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [cart]
   );
 
-  // Place order connected to backend API (no fake order on backend failure)
+  // Place order connected to backend API (Payment status is always PAYMENT_PENDING at checkout)
   const placeOrder = async (): Promise<BackendOrder | null> => {
     const orderPayload = {
       userId: userProfile.id,
@@ -476,6 +515,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       userAvatar: userProfile.avatar,
       items: cart.map((c) => ({
         id: c.item.id,
+        foodId: c.item.id,
         name: c.item.name,
         price: c.item.price,
         quantity: c.quantity,
@@ -483,7 +523,8 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       })),
       totalAmount: cartSubtotal,
       subtotal: cartSubtotal,
-      paymentMethod,
+      paymentMethod: 'restaurant_qr',
+      paymentStatus: 'PAYMENT_PENDING',
       orderNote,
       mealSlot: activeCategory !== 'all' ? activeCategory.toUpperCase() : 'LUNCH',
     };
@@ -498,6 +539,8 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (res.ok && data.success && data.order) {
         setLastPlacedOrder(data.order);
         setOrderHistory((prev) => [data.order, ...prev]);
+        setUnpaidOrders((prev) => [data.order, ...prev]);
+        setUnpaidTotalAmount((prev) => prev + (Number(data.order.totalAmount) || cartSubtotal));
         setIsOrderSuccessModalOpen(true);
         setOrderStep(3);
         return data.order;
@@ -549,6 +592,10 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         orderHistory,
         isOrderHistoryLoading,
         fetchOrderHistory,
+        unpaidOrders,
+        unpaidTotalAmount,
+        isUnpaidLoading,
+        fetchUnpaidOrders,
         lastPlacedOrder,
       }}
     >

@@ -696,9 +696,9 @@
                 <th>Officer Info</th>
                 <th>Items & Instructions</th>
                 <th>Meal Slot</th>
-                <th>Payment</th>
+                <th>Payment Status</th>
                 <th>Total</th>
-                <th>Live Status</th>
+                <th>Order Status</th>
               </tr>
             </thead>
             <tbody id="all-orders-tbody">
@@ -1127,7 +1127,17 @@
             ${order.orderNote ? `<div style="font-size:11px; color:#d97706; margin-top:2px;">Note: ${order.orderNote}</div>` : ''}
           </td>
           <td><span class="badge badge-lunch">${order.mealSlot || 'General'}</span></td>
-          <td style="text-transform:uppercase; font-size:11px; font-weight:700;">${order.paymentMethod || 'online'}</td>
+          <td>
+            <div style="margin-bottom:4px;">
+              <span class="badge" style="background:${(order.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '#dcfce7' : '#fef3c7'}; color:${(order.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '#15803d' : '#b45309'}; font-weight:700; font-size:11px;">
+                ${(order.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '✓ PAID' : '⏳ UNPAID'}
+              </span>
+            </div>
+            <select class="status-select" style="font-size:11px; padding:2px 6px;" onchange="updatePaymentStatus('${order.id || order.orderNumber}', this.value)">
+              <option value="PAYMENT_PENDING" ${(order.paymentStatus || 'PAYMENT_PENDING') === 'PAYMENT_PENDING' ? 'selected' : ''}>⏳ Pending</option>
+              <option value="PAID" ${order.paymentStatus === 'PAID' ? 'selected' : ''}>✓ Marked Paid</option>
+            </select>
+          </td>
           <td style="font-weight:800; color:var(--text-main);">₹${order.totalAmount}</td>
           <td>
             <select class="status-select" onchange="updateOrderStatus('${order.id || order.orderNumber}', this.value)">
@@ -1158,7 +1168,11 @@
             </div>
           </td>
           <td style="font-size:12.5px;">${(order.items || []).map(i => `${i.quantity}x ${i.name || (i.item && i.item.name)}`).join(', ')}</td>
-          <td><span class="badge badge-lunch">${order.mealSlot || 'General'}</span></td>
+          <td>
+            <span class="badge" style="background:${(order.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '#dcfce7' : '#fef3c7'}; color:${(order.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '#15803d' : '#b45309'}; font-weight:700; font-size:10px;">
+              ${(order.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '✓ PAID' : '⏳ UNPAID'}
+            </span>
+          </td>
           <td style="font-weight:800;">₹${order.totalAmount}</td>
           <td><span class="badge badge-status-${(order.status || 'pending').toLowerCase()}">${order.status}</span></td>
           <td>
@@ -1336,6 +1350,20 @@
         await refreshAllData();
       } catch (e) {
         showToast('Failed to update order status');
+      }
+    }
+
+    async function updatePaymentStatus(orderId, paymentStatus) {
+      try {
+        await fetch(`${API_BASE}/api/orders/${orderId}/payment-status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentStatus })
+        });
+        showToast(`Payment status updated to ${paymentStatus}`);
+        await refreshAllData();
+      } catch (e) {
+        showToast('Failed to update payment status');
       }
     }
 

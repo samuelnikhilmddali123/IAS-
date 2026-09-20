@@ -49,7 +49,11 @@ export type IconName =
   | 'person-add-outline'
   | 'log-out-outline'
   | 'mail-outline'
-  | 'scan-outline';
+  | 'scan-outline'
+  | 'refresh'
+  | 'cart'
+  | 'qr-code'
+  | 'checkmark-done-circle';
 
 interface AppIconProps {
   name: IconName | string;
@@ -206,6 +210,7 @@ export const AppIcon: React.FC<AppIconProps> = ({
             fill="none"
           />
         );
+      case 'cart':
       case 'cart-outline':
         return (
           <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
@@ -316,11 +321,19 @@ export const AppIcon: React.FC<AppIconProps> = ({
             <Path d="M6 12h.01M18 12h.01" />
           </G>
         );
+      case 'checkmark-done-circle':
       case 'checkmark-circle':
         return (
           <G stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none">
             <Circle cx="12" cy="12" r="10" />
             <Path d="M8 12l3 3 5-5" />
+          </G>
+        );
+      case 'refresh':
+        return (
+          <G stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M23 4v6h-6M1 20v-6h6" />
+            <Path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
           </G>
         );
       case 'shield-checkmark':
@@ -361,6 +374,7 @@ export const AppIcon: React.FC<AppIconProps> = ({
             <Path d="M1 1l22 22" />
           </G>
         );
+      case 'qr-code':
       case 'qr-code-outline':
         return (
           <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">

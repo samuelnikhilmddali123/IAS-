@@ -1,8 +1,12 @@
-﻿const dataStore = require('../storage/dataStore');
+const dataStore = require('../storage/dataStore');
 const Order = require('../models/Order');
 const Food = require('../models/Food');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const QRCode = require('qrcode');
+
+const RESTAURANT_UPI_ID = process.env.RESTAURANT_UPI_ID || 'canteen.services@gov';
+const RESTAURANT_NAME = process.env.RESTAURANT_NAME || 'Canteen Services GOI';
 
 function formatOrderDoc(doc) {
   if (!doc) return null;
@@ -28,6 +32,7 @@ function formatOrderDoc(doc) {
     totalAmount: Number(obj.totalAmount || obj.subtotal) || 0,
     grandTotal: Number(obj.grandTotal || obj.totalAmount || obj.subtotal) || 0,
     paymentMethod: obj.paymentMethod || 'online',
+    paymentStatus: obj.paymentStatus || 'PAYMENT_PENDING',
     orderNote: obj.orderNote || '',
     mealSlot: obj.mealSlot || 'General',
     status: obj.status || 'PREPARING',
@@ -45,23 +50,61 @@ const createOrder = async (orderData) => {
   }
 
   const orderNumber = orderData.orderNumber || ('ORD-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000));
-  const subtotal = Number(orderData.subtotal || orderData.totalAmount) || 0;
-  const totalAmount = Number(orderData.totalAmount || orderData.subtotal) || 0;
   const tokenNumber = orderData.tokenNumber || Math.floor(10 + Math.random() * 90);
 
+  // Security Rule #14: Never trust total amount sent from frontend.
+  // Validate and compute order total on backend using actual food prices.
+  let foodsCatalog = [];
+  if (mongoose.connection.readyState === 1) {
+    try {
+      foodsCatalog = await Food.find();
+    } catch (e) {
+      console.warn('[ORDER] Food price lookup warning:', e.message);
+    }
+  }
+  if (!foodsCatalog || foodsCatalog.length === 0) {
+    foodsCatalog = dataStore.getFoods ? dataStore.getFoods() : [];
+  }
+
+  const foodPriceMap = new Map();
+  foodsCatalog.forEach(f => {
+    const p = Number(f.price) || 0;
+    if (f.id) foodPriceMap.set(String(f.id), p);
+    if (f._id) foodPriceMap.set(String(f._id), p);
+    if (f.name) foodPriceMap.set(f.name.toLowerCase().trim(), p);
+  });
+
+  let calculatedSubtotal = 0;
   const formattedItems = orderData.items.map(item => {
-    const qty = Number(item.quantity) || 1;
-    const price = Number(item.price || (item.item && item.item.price)) || 0;
+    const qty = Math.max(1, Number(item.quantity) || 1);
+    const idKey = String(item.foodId || item.id || (item.item && (item.item.id || item.item._id)) || '');
+    const nameKey = String(item.name || (item.item && item.item.name) || '').toLowerCase().trim();
+
+    let unitPrice = 0;
+    if (idKey && foodPriceMap.has(idKey)) {
+      unitPrice = foodPriceMap.get(idKey);
+    } else if (nameKey && foodPriceMap.has(nameKey)) {
+      unitPrice = foodPriceMap.get(nameKey);
+    } else {
+      unitPrice = Number(item.price || (item.item && item.item.price)) || 0;
+    }
+
+    const itemTotal = qty * unitPrice;
+    calculatedSubtotal += itemTotal;
+
     return {
-      foodId: String(item.foodId || item.id || (item.item && (item.item.id || item.item._id)) || ''),
-      id: String(item.id || item.foodId || ''),
+      foodId: idKey,
+      id: idKey,
       name: item.name || (item.item && item.item.name) || 'Food item',
       quantity: qty,
-      price: price,
-      total: qty * price,
+      price: unitPrice,
+      total: itemTotal,
       image: item.image || (item.item && item.item.image) || ''
     };
   });
+
+  const subtotal = calculatedSubtotal;
+  const totalAmount = calculatedSubtotal;
 
   const orderPayload = {
     orderNumber,
@@ -74,6 +117,7 @@ const createOrder = async (orderData) => {
     totalAmount,
     grandTotal: totalAmount,
     paymentMethod: orderData.paymentMethod || 'online',
+    paymentStatus: 'PAYMENT_PENDING',
     orderNote: orderData.orderNote || '',
     mealSlot: orderData.mealSlot || 'General',
     status: 'PREPARING',
@@ -278,11 +322,101 @@ const getAdminStats = async () => {
   return dataStore.getAdminStats();
 };
 
+const updatePaymentStatus = async (orderId, paymentStatus) => {
+  if (!orderId || !paymentStatus) {
+    const error = new Error('Order ID and paymentStatus are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const validStatuses = ['PAYMENT_PENDING', 'PAID'];
+  if (!validStatuses.includes(paymentStatus)) {
+    const error = new Error(`Invalid payment status. Must be one of: ${validStatuses.join(', ')}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let updatedOrder = null;
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(orderId);
+      const mongoOrder = await Order.findOneAndUpdate(
+        {
+          $or: [
+            ...(isObjectId ? [{ _id: orderId }] : []),
+            { orderNumber: orderId }
+          ]
+        },
+        { $set: { paymentStatus, updatedAt: new Date() } },
+        { new: true }
+      );
+      if (mongoOrder) {
+        updatedOrder = formatOrderDoc(mongoOrder);
+      }
+    } catch (e) {
+      console.warn('[ORDER] MongoDB updatePaymentStatus warning:', e.message);
+    }
+  }
+
+  const jsonOrder = dataStore.updatePaymentStatus ? dataStore.updatePaymentStatus(orderId, paymentStatus) : null;
+  if (!updatedOrder && !jsonOrder) {
+    const error = new Error('Order not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return updatedOrder || jsonOrder;
+};
+
+const getUnpaidOrders = async (userIdOrPhone) => {
+  const allUserOrders = await getUserOrders(userIdOrPhone);
+  const unpaid = (allUserOrders || []).filter(o => o.paymentStatus === 'PAYMENT_PENDING');
+  const totalOutstanding = unpaid.reduce((sum, o) => sum + (Number(o.totalAmount || o.grandTotal) || 0), 0);
+  return {
+    orders: unpaid,
+    totalOutstanding,
+    count: unpaid.length
+  };
+};
+
+const getRestaurantPaymentQr = async (amount = 0, orderIds = []) => {
+  const numAmount = Number(amount) || 0;
+  const upiId = RESTAURANT_UPI_ID;
+  const payeeName = RESTAURANT_NAME;
+
+  // Standard UPI payment URI format
+  const upiPayload = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}${numAmount > 0 ? `&am=${numAmount.toFixed(2)}` : ''}&cu=INR&tn=${encodeURIComponent('Canteen Food Orders Settlement')}`;
+
+  const qrDataUrl = await QRCode.toDataURL(upiPayload, {
+    errorCorrectionLevel: 'H',
+    margin: 2,
+    scale: 8,
+    color: {
+      dark: '#0a3d31', // Government Forest Green
+      light: '#ffffff'
+    }
+  });
+
+  return {
+    qrDataUrl,
+    upiPayload,
+    upiId,
+    payeeName,
+    amount: numAmount,
+    orderIds,
+    paymentInstructions: 'Scan using Google Pay, PhonePe, Paytm, BHIM or any UPI app to pay the canteen counter.'
+  };
+};
+
 module.exports = {
   createOrder,
   getUserOrders,
   getOrderById,
   getAllOrdersForAdmin,
   updateOrderStatus,
+  updatePaymentStatus,
+  getUnpaidOrders,
+  getRestaurantPaymentQr,
   getAdminStats
 };
