@@ -5,13 +5,13 @@ import { useCanteen } from '../context/CanteenContext';
 import { ScreenTab } from '../types';
 
 export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, totalCartItems, unpaidOrders } = useCanteen();
+  const { activeTab, setActiveTab, totalCartItems } = useCanteen();
 
   const navItems: { tab: ScreenTab; label: string; icon: IconName; iconActive: IconName }[] = [
     { tab: 'home', label: 'Home', icon: 'home-outline', iconActive: 'home' },
     { tab: 'menu', label: 'Menu', icon: 'restaurant-outline', iconActive: 'restaurant' },
-    { tab: 'orders', label: 'Cart', icon: 'cart-outline', iconActive: 'cart-outline' },
-    { tab: 'payment', label: 'Payment', icon: 'qr-code-outline', iconActive: 'qr-code-outline' },
+    { tab: 'cart', label: 'Cart', icon: 'cart-outline', iconActive: 'cart' },
+    { tab: 'orders', label: 'Orders', icon: 'receipt-outline', iconActive: 'receipt' },
     { tab: 'profile', label: 'Profile', icon: 'person-outline', iconActive: 'person' },
   ];
 
@@ -39,17 +39,10 @@ export const Sidebar: React.FC = () => {
                   size={20}
                   color={isActive ? '#0c3527' : '#a3c9b7'}
                 />
-                {item.tab === 'orders' && totalCartItems > 0 && (
+                {item.tab === 'cart' && totalCartItems > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>
                       {totalCartItems > 9 ? '9+' : totalCartItems}
-                    </Text>
-                  </View>
-                )}
-                {item.tab === 'payment' && unpaidOrders.length > 0 && (
-                  <View style={[styles.badge, { backgroundColor: '#d97706' }]}>
-                    <Text style={styles.badgeText}>
-                      {unpaidOrders.length}
                     </Text>
                   </View>
                 )}

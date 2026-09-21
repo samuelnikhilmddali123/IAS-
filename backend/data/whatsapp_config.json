@@ -1,5 +1,5 @@
 {
-  "adminWhatsAppNumber": "+919676482288",
+  "adminWhatsAppNumber": "+919917595999",
   "provider": "whatsapp_web",
   "meta": {
     "phoneNumberId": "",
@@ -11,7 +11,7 @@
     "authToken": "",
     "fromNumber": "whatsapp:+14155238886"
   },
-  "connectionStatus": "Connected (+919676482288)",
-  "updatedAt": "2026-09-19T05:13:29.562Z",
+  "connectionStatus": "Connected (+919917595999)",
+  "updatedAt": "2026-09-21T09:46:58.660Z",
   "lastTestedAt": null
 }

@@ -1,4 +1,4 @@
-export type ScreenTab = 'home' | 'menu' | 'orders' | 'payment' | 'profile' | 'settings' | 'help';
+export type ScreenTab = 'home' | 'menu' | 'cart' | 'orders' | 'profile' | 'settings' | 'help';
 
 export type CategoryId =
   | 'all'
@@ -45,6 +45,7 @@ export interface MealTiming {
 
 export interface BackendOrder {
   id: string;
+  _id?: string;
   orderNumber: string;
   userId?: string;
   userName?: string;
@@ -60,10 +61,16 @@ export interface BackendOrder {
   totalAmount: number;
   subtotal: number;
   paymentMethod: string;
-  paymentStatus?: 'PAYMENT_PENDING' | 'PAID';
+  paymentStatus?: 'UNPAID' | 'PAYMENT_PENDING' | 'PAID';
   orderNote?: string;
   mealSlot?: string;
-  status: 'PENDING' | 'PREPARING' | 'READY' | 'DELIVERED' | 'CANCELLED';
+  orderType?: 'INSTANT' | 'PRE_ORDER';
+  pickupDate?: string;
+  pickupTime?: string;
+  kitchenStatus?: 'NEW' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+  billNumber?: string;
+  status: 'NEW' | 'ACCEPTED' | 'PENDING' | 'PRE_ORDERED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
   tokenNumber?: number;
   createdAt: string;
 }
+

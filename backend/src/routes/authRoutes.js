@@ -8,7 +8,9 @@ const {
   getAllUsers,
   getUserById,
   updateUser,
-  deleteUser
+  deleteUser,
+  revokeUserQr,
+  regenerateUserQr
 } = require('../services/authService');
 const userAuth = require('../middleware/userAuthMiddleware');
 
@@ -53,9 +55,10 @@ const handleUserRegister = async (req, res) => {
 
 const handleUserLogin = async (req, res) => {
   try {
-    const ident = req.body.phone || req.body.mobile || req.body.email;
-    const pin = req.body.pin || req.body.password;
-    const result = await loginUser(ident, pin);
+    const password = req.body.password || req.body.pin || '';
+    const phone = req.body.phone || req.body.mobile || '';
+    const email = req.body.email || '';
+    const result = await loginUser({ password, phone, email });
     res.status(200).json({
       success: true,
       message: 'Officer authenticated successfully',
@@ -183,6 +186,58 @@ router.delete('/users/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Officer not found' });
     }
     res.status(200).json({ success: true, message: 'Officer removed successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Regenerate Lifetime Login QR for Officer (Admin / System)
+router.post('/users/:id/regenerate-qr', async (req, res) => {
+  try {
+    const qrInfo = await regenerateUserQr(req.params.id);
+    res.status(200).json({
+      success: true,
+      message: 'Lifetime QR code regenerated successfully',
+      qrInfo
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Revoke Lifetime Login QR for Officer (Admin / Security)
+router.post('/users/:id/revoke-qr', async (req, res) => {
+  try {
+    await revokeUserQr(req.params.id);
+    res.status(200).json({
+      success: true,
+      message: 'Officer lifetime QR code has been revoked successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Authenticated Officer: Retrieve own Lifetime Login QR
+router.get('/my-qr', userAuth, async (req, res) => {
+  try {
+    const user = await getUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Officer profile not found' });
+    }
+    res.status(200).json({
+      success: true,
+      lifetimeQrPayload: user.lifetimeQrPayload,
+      lifetimeQrDataUrl: user.lifetimeQrDataUrl,
+      lifetimeQrImage: user.lifetimeQrImage,
+      qrRevoked: user.qrRevoked || false
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

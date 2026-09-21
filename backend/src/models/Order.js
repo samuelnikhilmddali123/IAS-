@@ -121,33 +121,43 @@ const orderSchema = new mongoose.Schema(
 
         paymentStatus: {
             type: String,
-            enum: [
-                "PAYMENT_PENDING",
-                "PAID"
-            ],
-            default: "PAYMENT_PENDING",
-            index: true
+            enum: ['UNPAID', 'PAYMENT_PENDING', 'PAID'],
+            default: 'UNPAID'
         },
 
+        orderType: {
+            type: String,
+            enum: ['INSTANT', 'PRE_ORDER'],
+            default: 'INSTANT'
+        },
+        pickupDate: {
+            type: Date,
+            default: null
+        },
+        pickupTime: {
+            type: String,
+            default: null
+        },
+        // Existing fields continue
         orderNote: {
             type: String,
             default: ""
         },
-
         mealSlot: {
             type: String,
             default: "General"
         },
-
         tokenNumber: {
             type: Number,
             default: () => Math.floor(10 + Math.random() * 90)
         },
-
         status: {
             type: String,
             enum: [
+                "NEW",
+                "ACCEPTED",
                 "PENDING",
+                "PRE_ORDERED",
                 "PREPARING",
                 "READY",
                 "COMPLETED",
@@ -155,8 +165,14 @@ const orderSchema = new mongoose.Schema(
                 "VALIDATED",
                 "REJECTED"
             ],
-            default: "PREPARING"
+            default: "NEW"
         },
+        kitchenStatus: {
+            type: String,
+            enum: ["NEW", "ACCEPTED", "PREPARING", "READY", "COMPLETED", "CANCELLED"],
+            default: "NEW"
+        },
+
 
         billNumber: {
             type: String,

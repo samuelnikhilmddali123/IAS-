@@ -10,7 +10,7 @@ import { Header } from './src/components/Header';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { MenuScreen } from './src/screens/MenuScreen';
 import { OrdersScreen } from './src/screens/OrdersScreen';
-import { PaymentScreen } from './src/screens/PaymentScreen';
+import { OrderTrackingScreen } from './src/screens/OrderTrackingScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { ProfileScreen, SettingsScreen, HelpScreen } from './src/screens/OtherScreens';
 
@@ -23,10 +23,10 @@ function MainLandscapeApp(): React.JSX.Element {
         return <HomeScreen />;
       case 'menu':
         return <MenuScreen />;
-      case 'orders':
+      case 'cart':
         return <OrdersScreen />;
-      case 'payment':
-        return <PaymentScreen />;
+      case 'orders':
+        return <OrderTrackingScreen />;
       case 'profile':
         return <ProfileScreen />;
       case 'settings':

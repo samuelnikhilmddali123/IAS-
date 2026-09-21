@@ -26,7 +26,7 @@ export const CartSidebar: React.FC = () => {
   } = useCanteen();
 
   const handleCheckout = () => {
-    setActiveTab('orders');
+    setActiveTab('cart');
     setOrderStep(1);
   };
 
@@ -142,15 +142,26 @@ export const CartSidebar: React.FC = () => {
             </View>
           </View>
 
-          {/* Place Order CTA */}
-          <TouchableOpacity
-            style={styles.checkoutBtn}
-            onPress={handleCheckout}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.checkoutBtnText}>Place Order</Text>
-            <AppIcon name="arrow-forward" size={15} color="#ffffff" style={{ marginLeft: 6 }} />
-          </TouchableOpacity>
+          {/* Two Main Cart CTAs */}
+          <View style={styles.actionButtonsCol}>
+            <TouchableOpacity
+              style={styles.checkoutBtn}
+              onPress={() => setActiveTab('cart')}
+              activeOpacity={0.85}
+            >
+              <AppIcon name="restaurant" size={14} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.checkoutBtnText}>CHECKOUT</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.generateBillBtn}
+              onPress={() => setActiveTab('cart')}
+              activeOpacity={0.85}
+            >
+              <AppIcon name="receipt-outline" size={14} color="#0c3527" style={{ marginRight: 6 }} />
+              <Text style={styles.generateBillBtnText}>GENERATE BILL</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.safeFoodNotice}>
             <AppIcon name="leaf" size={13} color="#15803d" style={{ marginRight: 6 }} />
@@ -168,6 +179,7 @@ export const CartSidebar: React.FC = () => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -360,6 +372,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
   },
+  actionButtonsCol: {
+    gap: 8,
+  },
   checkoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -375,6 +390,21 @@ const styles = StyleSheet.create({
   },
   checkoutBtnText: {
     color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  generateBillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#0d3829',
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  generateBillBtnText: {
+    color: '#0d3829',
     fontSize: 12,
     fontWeight: '700',
   },

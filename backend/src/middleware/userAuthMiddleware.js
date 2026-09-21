@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 
+const JWT_SECRET = process.env.JWT_SECRET || 'canteen_super_secret_jwt_key_2026_secure';
+
 const userAuth = (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -15,7 +17,7 @@ const userAuth = (req, res, next) => {
 
         const decoded = jwt.verify(
             token,
-            process.env.JWT_SECRET
+            JWT_SECRET
         );
 
         if (decoded.role !== "user") {

@@ -8,6 +8,13 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+process.on('uncaughtException', (err) => {
+  console.warn('[Process] Uncaught Exception caught safely:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Process] Unhandled Rejection caught safely:', reason && (reason.message || reason));
+});
+
 const connectDB = require('./db');
 const migrateData = require('./src/utils/migrateData');
 const authRoutes = require('./src/routes/authRoutes');
@@ -27,6 +34,12 @@ const qrDir = path.join(__dirname, 'uploads/qr');
 if (!fs.existsSync(qrDir)) {
   fs.mkdirSync(qrDir, { recursive: true });
 }
+
+let io = null;
+function getIO() {
+  return io;
+}
+
 
 // Middleware
 app.use(cors({ origin: '*' }));
@@ -107,8 +120,9 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 
-// Admin Web App direct entry
-app.get('/admin', (req, res) => {
+// Admin React SPA direct entry and wildcard routing for all dedicated pages
+// (/admin/dashboard, /admin/food-menu, /admin/orders, /admin/whatsapp, /admin/officers)
+app.get(/^\/admin(\/.*)?$/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public/admin/index.html'));
 });
 
@@ -164,6 +178,13 @@ async function startServer() {
     console.log(`  Officer Search:  http://localhost:${PORT}/search-officer`);
     console.log(`=======================================================`);
   });
+  // Initialize Socket.io for Kitchen Order Ticket (KOT) delivery
+  const { Server: SocketIOServer } = require('socket.io');
+  io = new SocketIOServer(server, { cors: { origin: '*' } });
+  io.on('connection', (socket) => {
+    console.log('[Socket.IO] Client connected to live order feed:', socket.id);
+  });
+
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -181,4 +202,6 @@ async function startServer() {
 }
 
 startServer();
+
+module.exports = { app, get io() { return io; }, getIO };
 

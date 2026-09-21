@@ -413,6 +413,12 @@ const dataStore = {
     return users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
   },
 
+  getUserByFingerprint(fingerprint) {
+    if (!fingerprint) return null;
+    const users = readJSON(USERS_FILE);
+    return users.find(u => u.passwordUniquenessFingerprint === fingerprint);
+  },
+
   saveUser(userData) {
     const users = readJSON(USERS_FILE);
     const cleanPhone = String(userData.phone).trim();
@@ -432,6 +438,7 @@ const dataStore = {
       email: userData.email || '',
       phone: cleanPhone,
       pin: userData.pin || userData.password || '123456',
+      passwordUniquenessFingerprint: userData.passwordUniquenessFingerprint || null,
       avatar: userData.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
       designation: userData.designation || 'IAS Officer • Special Duty',
       department: userData.department || 'Cabinet Secretariat • Government of India',
@@ -529,6 +536,10 @@ const dataStore = {
     const idx = orders.findIndex(o => o.id === orderId || o.orderNumber === orderId || String(o._id) === orderId);
     if (idx === -1) return null;
     orders[idx].status = status;
+    orders[idx].kitchenStatus = status;
+    if (status === 'COMPLETED') {
+      orders[idx].paymentStatus = 'UNPAID';
+    }
     orders[idx].updatedAt = new Date().toISOString();
     writeJSON(ORDERS_FILE, orders);
     return orders[idx];
@@ -546,7 +557,8 @@ const dataStore = {
   },
 
   getUnpaidOrders(filter = {}) {
-    return this.getOrders({ ...filter, paymentStatus: 'PAYMENT_PENDING' });
+    const orders = this.getOrders(filter);
+    return orders.filter(o => o.paymentStatus === 'UNPAID' || o.paymentStatus === 'PAYMENT_PENDING');
   },
 
   // Admin Stats

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,13 +8,17 @@ import {
   TextInput,
   ScrollView,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { AppIcon } from '../components/AppIcon';
-import { useCanteen } from '../context/CanteenContext';
+import { useCanteen, ActionSuccessInfo } from '../context/CanteenContext';
+
+const PRE_ORDER_TIMES = ['1:00 PM', '2:30 PM', '6:00 PM', '7:30 PM', '8:30 PM'];
 
 export const OrdersScreen: React.FC = () => {
-  const [viewMode, setViewMode] = React.useState<'checkout' | 'history'>('checkout');
-  const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [activeActionType, setActiveActionType] = useState<'checkout' | 'bill' | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const {
     cart,
@@ -25,285 +29,144 @@ export const OrdersScreen: React.FC = () => {
     clearCart,
     orderNote,
     setOrderNote,
-    paymentMethod,
-    setPaymentMethod,
-    orderStep,
-    setOrderStep,
-    placeOrder,
-    isOrderSuccessModalOpen,
-    setIsOrderSuccessModalOpen,
+    pickupTime,
+    setPickupTime,
+    isPreOrder,
+    setIsPreOrder,
     setActiveTab,
-    orderHistory,
-    fetchOrderHistory,
-    isOrderHistoryLoading,
-    lastPlacedOrder,
+    checkoutCart,
+    generateBillCart,
+    actionSuccessModal,
+    setActionSuccessModal,
     logout,
   } = useCanteen();
 
-  const handlePlaceOrderClick = async () => {
+  // ==========================================
+  // ACTION 1: CHECKOUT HANDLER
+  // ==========================================
+  const handleCheckoutClick = async () => {
+    if (cart.length === 0) {
+      setErrorMessage('Your cart is empty. Please add items from the menu.');
+      return;
+    }
+
+    setErrorMessage(null);
     setIsSubmitting(true);
+    setActiveActionType('checkout');
+
     try {
-      await placeOrder();
+      const result = await checkoutCart();
+      if (result.success) {
+        // Requirement 1 & 2: Automatic logout upon success, no extra modal or logout button
+        clearCart();
+        logout();
+      } else {
+        setErrorMessage(result.error || 'Failed to send order to kitchen. Please try again.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to connect to backend server.');
     } finally {
       setIsSubmitting(false);
+      setActiveActionType(null);
     }
   };
 
-  const handleOrderDoneAndLogout = React.useCallback(() => {
-    setIsOrderSuccessModalOpen(false);
-    clearCart();
-    setOrderStep(1);
-    logout();
-  }, [clearCart, logout, setIsOrderSuccessModalOpen, setOrderStep]);
-
-  React.useEffect(() => {
-    let timer: any;
-    if (isOrderSuccessModalOpen) {
-      timer = setTimeout(() => {
-        handleOrderDoneAndLogout();
-      }, 5000);
+  // ==========================================
+  // ACTION 2: GENERATE BILL HANDLER
+  // ==========================================
+  const handleGenerateBillClick = async () => {
+    if (cart.length === 0) {
+      setErrorMessage('Your cart is empty. Please add items from the menu.');
+      return;
     }
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [isOrderSuccessModalOpen, handleOrderDoneAndLogout]);
+
+    setErrorMessage(null);
+    setIsSubmitting(true);
+    setActiveActionType('bill');
+
+    try {
+      const result = await generateBillCart();
+      if (result.success) {
+        // Requirement 1 & 2: Automatic logout upon success, no extra modal or logout button
+        clearCart();
+        logout();
+      } else {
+        setErrorMessage(result.error || 'Failed to generate and send bill. Please try again.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to connect to backend server.');
+    } finally {
+      setIsSubmitting(false);
+      setActiveActionType(null);
+    }
+  };
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* 0. Top View Mode Toggle: Current Checkout vs Order History */}
-      <View style={styles.viewModeToggleRow}>
-        <TouchableOpacity
-          style={[styles.viewModeBtn, viewMode === 'checkout' && styles.viewModeBtnActive]}
-          onPress={() => setViewMode('checkout')}
-          activeOpacity={0.8}
-        >
-          <AppIcon
-            name="cart-outline"
-            size={16}
-            color={viewMode === 'checkout' ? '#ffffff' : '#0a3d31'}
-            style={{ marginRight: 6 }}
-          />
-          <Text
-            style={[
-              styles.viewModeBtnText,
-              viewMode === 'checkout' && styles.viewModeBtnTextActive,
-            ]}
-          >
-            Checkout ({totalCartItems})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.viewModeBtn, viewMode === 'history' && styles.viewModeBtnActive]}
-          onPress={() => {
-            setViewMode('history');
-            fetchOrderHistory();
-          }}
-          activeOpacity={0.8}
-        >
-          <AppIcon
-            name="receipt-outline"
-            size={16}
-            color={viewMode === 'history' ? '#ffffff' : '#0a3d31'}
-            style={{ marginRight: 6 }}
-          />
-          <Text
-            style={[
-              styles.viewModeBtnText,
-              viewMode === 'history' && styles.viewModeBtnTextActive,
-            ]}
-          >
-            Order History ({orderHistory.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {viewMode === 'history' ? (
-        /* ==================== ORDER HISTORY VIEW ==================== */
-        <View style={styles.historyContainer}>
-          <View style={styles.historyHeaderRow}>
-            <View>
-              <Text style={styles.pageTitle}>Your Past Orders</Text>
-              <Text style={styles.pageSubtitle}>
-                Saved orders and live kitchen preparation status
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.refreshHistoryBtn}
-              onPress={fetchOrderHistory}
-              activeOpacity={0.7}
-            >
-              <AppIcon name="refresh" size={14} color="#0a3d31" style={{ marginRight: 4 }} />
-              <Text style={styles.refreshHistoryText}>
-                {isOrderHistoryLoading ? 'Refreshing...' : 'Refresh Status'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {orderHistory.length === 0 ? (
-            <View style={styles.emptyHistoryCard}>
-              <AppIcon name="receipt-outline" size={44} color="#94a3b8" />
-              <Text style={styles.emptyHistoryTitle}>No Orders Placed Yet</Text>
-              <Text style={styles.emptyHistorySub}>
-                Your order receipts and live kitchen updates will appear here once you place an order.
-              </Text>
-              <TouchableOpacity
-                style={styles.browseMenuBtn}
-                onPress={() => setActiveTab('home')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.browseMenuBtnText}>Browse Today's Menu ➔</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.ordersList}>
-              {orderHistory.map((ord) => {
-                const isPrep = ord.status === 'PREPARING' || ord.status === 'PENDING';
-                const isReady = ord.status === 'READY';
-                const isDone = ord.status === 'DELIVERED';
-                return (
-                  <View key={ord.id || ord.orderNumber} style={styles.historyOrderCard}>
-                    <View style={styles.historyOrderHeader}>
-                      <View>
-                        <Text style={styles.historyOrderNum}>{ord.orderNumber}</Text>
-                        <Text style={styles.historyOrderDate}>
-                          {new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Token #{ord.tokenNumber || 'CS-24'}
-                        </Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.statusBadgePill,
-                          isPrep && styles.statusBadgePrep,
-                          isReady && styles.statusBadgeReady,
-                          isDone && styles.statusBadgeDone,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusBadgeText,
-                            isPrep && styles.statusTextPrep,
-                            isReady && styles.statusTextReady,
-                            isDone && styles.statusTextDone,
-                          ]}
-                        >
-                          {isPrep ? '⏳ Preparing in Kitchen' : isReady ? '🔔 Ready for Pickup' : '✓ Delivered'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.historyItemsList}>
-                      {(ord.items || []).map((itm: any, idx: number) => (
-                        <View key={idx} style={styles.historyItemRow}>
-                          <Text style={styles.historyItemName}>
-                            {itm.quantity}x {itm.name || (itm.item && itm.item.name)}
-                          </Text>
-                          <Text style={styles.historyItemPrice}>₹{(itm.price || (itm.item && itm.item.price) || 0) * (itm.quantity || 1)}</Text>
-                        </View>
-                      ))}
-                    </View>
-
-                    {ord.orderNote ? (
-                      <Text style={styles.historyNoteText}>Special Note: "{ord.orderNote}"</Text>
-                    ) : null}
-
-                    <View style={styles.historyFooterRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={styles.historyPayMethod}>Payment: </Text>
-                        <Text
-                          style={{
-                            fontWeight: '700',
-                            fontSize: 11,
-                            color: (ord.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '#15803d' : '#b45309',
-                          }}
-                        >
-                          {(ord.paymentStatus || 'PAYMENT_PENDING') === 'PAID' ? '✓ PAID' : '⏳ PAYMENT PENDING'}
-                        </Text>
-                      </View>
-                      <Text style={styles.historyTotalAmount}>
-                        Total: <Text style={styles.historyTotalBold}>₹{ord.totalAmount}</Text>
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
-      ) : (
-        /* ==================== CHECKOUT FLOW ==================== */
-        <>
-      {/* 1. Stepper Bar (1. Your Order -> 2. Kitchen Submission -> 3. Confirmation) */}
-      <View style={styles.stepperContainer}>
-        <View style={styles.stepItem}>
-          <View style={[styles.stepCircle, orderStep >= 1 && styles.stepCircleActive]}>
-            <Text style={[styles.stepNumber, orderStep >= 1 && styles.stepNumberActive]}>1</Text>
-          </View>
-          <Text style={[styles.stepLabel, orderStep >= 1 && styles.stepLabelActive]}>
-            Your Order
-          </Text>
-        </View>
-
-        <View style={[styles.stepConnector, orderStep >= 2 && styles.stepConnectorActive]} />
-
-        <View style={styles.stepItem}>
-          <View style={[styles.stepCircle, orderStep >= 2 && styles.stepCircleActive]}>
-            <Text style={[styles.stepNumber, orderStep >= 2 && styles.stepNumberActive]}>2</Text>
-          </View>
-          <Text style={[styles.stepLabel, orderStep >= 2 && styles.stepLabelActive]}>
-            Submit Order
-          </Text>
-        </View>
-
-        <View style={[styles.stepConnector, orderStep >= 3 && styles.stepConnectorActive]} />
-
-        <View style={styles.stepItem}>
-          <View style={[styles.stepCircle, orderStep >= 3 && styles.stepCircleActive]}>
-            <Text style={[styles.stepNumber, orderStep >= 3 && styles.stepNumberActive]}>3</Text>
-          </View>
-          <Text style={[styles.stepLabel, orderStep >= 3 && styles.stepLabelActive]}>
-            Confirmation
-          </Text>
-        </View>
-      </View>
-
-      {/* 2. Page Header */}
+      {/* 1. Page Header */}
       <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>Review & Place Order</Text>
-        <Text style={styles.pageSubtitle}>Zero upfront payment. Settle your bill post-meal via Restaurant QR.</Text>
+        <View style={styles.headerLeft}>
+          <View style={styles.headerIconCircle}>
+            <AppIcon name="cart-outline" size={20} color="#ffffff" />
+          </View>
+          <View>
+            <Text style={styles.pageTitle}>CART</Text>
+            <Text style={styles.pageSubtitle}>
+              Review items, customizations, and pre-order timings.
+            </Text>
+          </View>
+        </View>
+
+        {cart.length > 0 && (
+          <TouchableOpacity
+            onPress={clearCart}
+            style={styles.clearCartHeaderBtn}
+            activeOpacity={0.7}
+            disabled={isSubmitting}
+          >
+            <AppIcon name="trash-outline" size={14} color="#64748b" style={{ marginRight: 4 }} />
+            <Text style={styles.clearCartHeaderText}>Clear Cart</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* 3. Main Order Columns */}
+      {/* 2. Error Message Banner */}
+      {errorMessage && (
+        <View style={styles.errorBanner}>
+          <AppIcon name="alert-circle" size={17} color="#dc2626" style={{ marginRight: 8 }} />
+          <Text style={styles.errorBannerText}>{errorMessage}</Text>
+          <TouchableOpacity onPress={() => setErrorMessage(null)}>
+            <AppIcon name="close" size={15} color="#dc2626" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 3. Main Cart Content */}
       <View style={styles.mainColumns}>
-        {/* Left Column: Expanded Cart Items & Special Instructions */}
+        {/* Left Column: Cart Items List + Customizations + Pre-Order */}
         <View style={styles.leftColumn}>
+          {/* Cart Items Card */}
           <View style={styles.cartCard}>
             <View style={styles.cartCardHeader}>
-              <View style={styles.titleRow}>
-                <AppIcon name="cart-outline" size={17} color="#0f172a" style={{ marginRight: 6 }} />
-                <Text style={styles.cartTitle}>
-                  Your Cart <Text style={styles.cartItemCount}>({totalCartItems} items)</Text>
-                </Text>
-              </View>
-
-              {cart.length > 0 && (
-                <TouchableOpacity onPress={clearCart} style={styles.clearBtn} activeOpacity={0.7}>
-                  <AppIcon name="trash-outline" size={14} color="#64748b" style={{ marginRight: 4 }} />
-                  <Text style={styles.clearBtnText}>Clear Cart</Text>
-                </TouchableOpacity>
-              )}
+              <Text style={styles.cartTitle}>
+                Items in Cart <Text style={styles.cartCountBadge}>({totalCartItems})</Text>
+              </Text>
+              <Text style={styles.itemsTableHead}>ITEM • QTY • PRICE</Text>
             </View>
 
             {/* List of Cart Items */}
             <View style={styles.itemsList}>
               {cart.length === 0 ? (
                 <View style={styles.emptyCartBox}>
-                  <AppIcon name="fast-food-outline" size={32} color="#cbd5e1" />
-                  <Text style={styles.emptyCartTitle}>No items in order</Text>
+                  <AppIcon name="bag-handle-outline" size={42} color="#cbd5e1" />
+                  <Text style={styles.emptyCartTitle}>Your cart is currently empty</Text>
+                  <Text style={styles.emptyCartSub}>Add wholesome officer meals from today's menu.</Text>
                   <TouchableOpacity
                     style={styles.browseMenuBtn}
                     onPress={() => setActiveTab('menu')}
+                    activeOpacity={0.8}
                   >
-                    <Text style={styles.browseMenuBtnText}>Browse Menu</Text>
+                    <Text style={styles.browseMenuBtnText}>Browse Food Menu ➔</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -312,20 +175,29 @@ export const OrdersScreen: React.FC = () => {
                     <Image source={{ uri: c.item.image }} style={styles.itemThumb} />
 
                     <View style={styles.itemInfo}>
-                      <Text style={styles.itemName}>{c.item.name}</Text>
-                      <View style={styles.tagRow}>
-                        <View style={styles.vegDot} />
-                        <Text style={styles.tagText}>{c.item.subCategory || c.item.category}</Text>
+                      <Text style={styles.itemName} numberOfLines={1}>
+                        {c.item.name}
+                      </Text>
+                      <View style={styles.itemMetaRow}>
+                        <View
+                          style={[
+                            styles.dietDot,
+                            { backgroundColor: c.item.isVeg ? '#16a34a' : '#dc2626' },
+                          ]}
+                        />
+                        <Text style={styles.itemCategoryText}>
+                          {c.item.subCategory || c.item.category} • ₹{c.item.price} each
+                        </Text>
                       </View>
                     </View>
 
-                    <Text style={styles.itemPrice}>₹{c.item.price * c.quantity}</Text>
-
-                    {/* Stepper */}
+                    {/* Stepper (- qty +) */}
                     <View style={styles.stepper}>
                       <TouchableOpacity
                         style={styles.stepBtn}
                         onPress={() => updateQuantity(c.item.id, -1)}
+                        activeOpacity={0.7}
+                        disabled={isSubmitting}
                       >
                         <Text style={styles.stepBtnText}>−</Text>
                       </TouchableOpacity>
@@ -333,15 +205,24 @@ export const OrdersScreen: React.FC = () => {
                       <TouchableOpacity
                         style={styles.stepBtn}
                         onPress={() => updateQuantity(c.item.id, 1)}
+                        activeOpacity={0.7}
+                        disabled={isSubmitting}
                       >
                         <Text style={styles.stepBtnText}>+</Text>
                       </TouchableOpacity>
                     </View>
 
-                    {/* Trash Delete */}
+                    {/* Item Total */}
+                    <View style={styles.itemTotalBox}>
+                      <Text style={styles.itemTotalPrice}>₹{c.item.price * c.quantity}</Text>
+                    </View>
+
+                    {/* Remove Trash */}
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() => removeFromCart(c.item.id)}
+                      activeOpacity={0.7}
+                      disabled={isSubmitting}
                     >
                       <AppIcon name="trash-outline" size={15} color="#94a3b8" />
                     </TouchableOpacity>
@@ -350,150 +231,220 @@ export const OrdersScreen: React.FC = () => {
               )}
             </View>
 
-            {/* Add a Note (Optional) */}
-            <View style={styles.noteSection}>
-              <View style={styles.noteHeader}>
-                <AppIcon name="document-text-outline" size={15} color="#475569" style={{ marginRight: 6 }} />
-                <Text style={styles.noteTitle}>Add a Note (Optional)</Text>
+            {/* Note / Customization Section */}
+            {cart.length > 0 && (
+              <View style={styles.noteSection}>
+                <View style={styles.noteHeader}>
+                  <AppIcon name="document-text-outline" size={15} color="#0c3527" style={{ marginRight: 6 }} />
+                  <Text style={styles.noteTitle}>Existing Notes / Customizations</Text>
+                </View>
+                <TextInput
+                  style={styles.noteInput}
+                  placeholder="e.g. Less spicy, no onion, extra chutney, separate packing..."
+                  placeholderTextColor="#94a3b8"
+                  maxLength={120}
+                  value={orderNote}
+                  onChangeText={setOrderNote}
+                  disableFullscreenUI={true}
+                  editable={!isSubmitting}
+                />
               </View>
-              <TextInput
-                style={styles.noteInput}
-                placeholder="e.g. Less spicy, no onion, extra chutney..."
-                placeholderTextColor="#94a3b8"
-                maxLength={100}
-                value={orderNote}
-                onChangeText={setOrderNote}
-                disableFullscreenUI={true}
-              />
-              <Text style={styles.noteCounter}>{orderNote.length}/100</Text>
-            </View>
+            )}
           </View>
 
-          {/* Productivity Banner */}
-          <View style={styles.bannerCard}>
-            <View style={styles.bannerIconBox}>
-              <AppIcon name="leaf" size={18} color="#15803d" />
+          {/* Pre-Order / Pickup Time Card (Requirement 2 & 13) */}
+          {cart.length > 0 && (
+            <View style={styles.preOrderCard}>
+              <View style={styles.preOrderHeader}>
+                <View style={styles.preOrderTitleRow}>
+                  <AppIcon name="time-outline" size={17} color="#0c3527" style={{ marginRight: 6 }} />
+                  <Text style={styles.preOrderTitle}>Dining Option & Pickup Time</Text>
+                </View>
+
+                {/* Pre-Order Toggle */}
+                <View style={styles.toggleRow}>
+                  <TouchableOpacity
+                    style={[styles.toggleBtn, !isPreOrder && styles.toggleBtnActive]}
+                    onPress={() => {
+                      setIsPreOrder(false);
+                      setPickupTime('');
+                    }}
+                    activeOpacity={0.8}
+                    disabled={isSubmitting}
+                  >
+                    <Text style={[styles.toggleBtnText, !isPreOrder && styles.toggleBtnTextActive]}>
+                      Instant Dining
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.toggleBtn, isPreOrder && styles.toggleBtnActive]}
+                    onPress={() => {
+                      setIsPreOrder(true);
+                      if (!pickupTime) setPickupTime('6:00 PM');
+                    }}
+                    activeOpacity={0.8}
+                    disabled={isSubmitting}
+                  >
+                    <Text style={[styles.toggleBtnText, isPreOrder && styles.toggleBtnTextActive]}>
+                      Pre-Order Pickup
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {isPreOrder && (
+                <View style={styles.preOrderBody}>
+                  <Text style={styles.pickupLabel}>
+                    Select preferred pickup time (The kitchen will prepare it in advance):
+                  </Text>
+
+                  {/* Preset quick time chips */}
+                  <View style={styles.quickTimesRow}>
+                    {PRE_ORDER_TIMES.map((time) => {
+                      const isSelected = pickupTime === time;
+                      return (
+                        <TouchableOpacity
+                          key={time}
+                          style={[styles.timeChip, isSelected && styles.timeChipSelected]}
+                          onPress={() => setPickupTime(time)}
+                          activeOpacity={0.7}
+                          disabled={isSubmitting}
+                        >
+                          <Text style={[styles.timeChipText, isSelected && styles.timeChipTextSelected]}>
+                            {time}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Custom pickup time entry */}
+                  <View style={styles.customTimeRow}>
+                    <Text style={styles.customTimeLabel}>Or specify custom time:</Text>
+                    <TextInput
+                      style={styles.customTimeInput}
+                      placeholder="e.g. 6:00 PM"
+                      placeholderTextColor="#94a3b8"
+                      value={pickupTime}
+                      onChangeText={setPickupTime}
+                      disableFullscreenUI={true}
+                      editable={!isSubmitting}
+                    />
+                  </View>
+
+                  <View style={styles.kotTimeNotice}>
+                    <AppIcon name="restaurant" size={14} color="#15803d" style={{ marginRight: 6 }} />
+                    <Text style={styles.kotTimeNoticeText}>
+                      KOT will show <Text style={{ fontWeight: '700' }}>Pickup Time: {pickupTime || '6:00 PM'}</Text>
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
-            <View style={styles.bannerTextBox}>
-              <Text style={styles.bannerTitle}>Good Food. Greater Productivity.</Text>
-              <Text style={styles.bannerSub}>
-                Nutritious meals for a healthier, stronger India.
-              </Text>
-            </View>
-          </View>
+          )}
         </View>
 
-        {/* Right Column: Order Summary & Payment Method */}
+        {/* Right Column: Totals & Exactly 2 Main Actions */}
         <View style={styles.rightColumn}>
-          {/* Order Summary Card */}
+          {/* Order Summary Breakdown */}
           <View style={styles.summaryCard}>
             <View style={styles.summaryHeader}>
-              <AppIcon name="receipt-outline" size={16} color="#0f172a" style={{ marginRight: 6 }} />
-              <Text style={styles.summaryTitle}>Order Summary</Text>
+              <AppIcon name="receipt-outline" size={17} color="#0f172a" style={{ marginRight: 6 }} />
+              <Text style={styles.summaryTitle}>Cart Summary</Text>
             </View>
 
-            <View style={styles.summaryLines}>
+            <View style={styles.summaryRows}>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Items ({totalCartItems})</Text>
+                <Text style={styles.summaryLabel}>Items Subtotal ({totalCartItems})</Text>
                 <Text style={styles.summaryValue}>₹{cartSubtotal}</Text>
               </View>
+
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Service Charge</Text>
+                <Text style={styles.summaryLabel}>Other Charges / Service</Text>
                 <Text style={styles.summaryValue}>₹0</Text>
               </View>
+
+              {isPreOrder && pickupTime ? (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Scheduled Pickup</Text>
+                  <Text style={[styles.summaryValue, { color: '#0d5c3a' }]}>{pickupTime}</Text>
+                </View>
+              ) : null}
+
               <View style={styles.summaryDivider} />
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Amount</Text>
-                <Text style={styles.totalValue}>₹{cartSubtotal}</Text>
+
+              <View style={styles.grandTotalRow}>
+                <Text style={styles.grandTotalLabel}>TOTAL</Text>
+                <Text style={styles.grandTotalValue}>₹{cartSubtotal}</Text>
               </View>
             </View>
-          </View>
 
-          {/* Post-Food Payment Settlement Notice (No card/COD at checkout) */}
-          <View style={styles.paymentNoticeCard}>
-            <View style={styles.paymentNoticeHeader}>
-              <View style={styles.paymentNoticeIconBox}>
-                <AppIcon name="restaurant" size={17} color="#0a3d31" />
-              </View>
-              <View style={styles.paymentNoticeTexts}>
-                <Text style={styles.paymentNoticeTitle}>Order Now • Pay Later</Text>
-                <Text style={styles.paymentNoticeSubtitle}>
-                  Zero upfront payment required at checkout.
+            {/* Exactly TWO Main Actions (Requirement 2, 12, 17) */}
+            <View style={styles.actionsSection}>
+              {/* 1. CHECKOUT BUTTON */}
+              <TouchableOpacity
+                style={[
+                  styles.checkoutBtn,
+                  (cart.length === 0 || isSubmitting) && styles.btnDisabled,
+                ]}
+                disabled={cart.length === 0 || isSubmitting}
+                onPress={handleCheckoutClick}
+                activeOpacity={0.85}
+              >
+                {isSubmitting && activeActionType === 'checkout' ? (
+                  <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
+                ) : (
+                  <AppIcon name="restaurant" size={17} color="#ffffff" style={{ marginRight: 8 }} />
+                )}
+                <Text style={styles.checkoutBtnText}>
+                  {isSubmitting && activeActionType === 'checkout'
+                    ? 'SENDING TO KITCHEN...'
+                    : 'CHECKOUT'}
                 </Text>
-              </View>
+              </TouchableOpacity>
+
+              <Text style={styles.actionSubtext}>
+                Sends order directly to kitchen queue (Status: NEW) & logs out.
+              </Text>
+
+              {/* 2. GENERATE BILL BUTTON */}
+              <TouchableOpacity
+                style={[
+                  styles.generateBillBtn,
+                  (cart.length === 0 || isSubmitting) && styles.btnDisabled,
+                ]}
+                disabled={cart.length === 0 || isSubmitting}
+                onPress={handleGenerateBillClick}
+                activeOpacity={0.85}
+              >
+                {isSubmitting && activeActionType === 'bill' ? (
+                  <ActivityIndicator size="small" color="#0c3527" style={{ marginRight: 8 }} />
+                ) : (
+                  <AppIcon name="receipt-outline" size={17} color="#0c3527" style={{ marginRight: 8 }} />
+                )}
+                <Text style={styles.generateBillBtnText}>
+                  {isSubmitting && activeActionType === 'bill'
+                    ? 'GENERATING BILL...'
+                    : 'GENERATE BILL'}
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.actionSubtext}>
+                Dispatches bill & Restaurant QR code to your registered mobile & logs out.
+              </Text>
             </View>
-            <View style={styles.paymentPendingPill}>
-              <Text style={styles.paymentPendingPillText}>PAYMENT STATUS: PAYMENT PENDING</Text>
-            </View>
-            <Text style={styles.paymentNoticeDesc}>
-              This order will immediately enter the kitchen queue. You can place multiple orders during your dining visit. After finishing your meal, settle your total bill via the Restaurant QR code in the Payment section.
-            </Text>
           </View>
 
-          {/* Place Order Button */}
-          <TouchableOpacity
-            style={[styles.placeOrderBtn, (cart.length === 0 || isSubmitting) && styles.placeOrderBtnDisabled]}
-            disabled={cart.length === 0 || isSubmitting}
-            onPress={handlePlaceOrderClick}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.placeOrderBtnText}>
-              {isSubmitting ? 'Sending Order to Kitchen...' : 'Checkout Order (Pay Later)'}
+          {/* Info Badge */}
+          <View style={styles.canteenBadge}>
+            <AppIcon name="leaf" size={15} color="#15803d" style={{ marginRight: 6 }} />
+            <Text style={styles.canteenBadgeText}>
+              Government Canteen Services • Zero Upfront Friction
             </Text>
-            <AppIcon name="arrow-forward" size={16} color="#ffffff" style={{ marginLeft: 8 }} />
-          </TouchableOpacity>
-
-          <Text style={styles.disclaimerText}>
-            Order is verified and recorded on the server before session completion.
-          </Text>
+          </View>
         </View>
       </View>
-      </>
-      )}
-
-      {/* Order Success & Immediate Logout Modal */}
-      <Modal
-        visible={isOrderSuccessModalOpen}
-        transparent
-        animationType="fade"
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.successIconCircle}>
-              <AppIcon name="checkmark-circle" size={48} color="#15803d" />
-            </View>
-            <Text style={styles.modalTitle}>Order Placed Successfully!</Text>
-            <Text style={styles.tokenBadge}>Token: #{lastPlacedOrder?.tokenNumber ? `CS-${lastPlacedOrder.tokenNumber}` : 'CS-8429'}</Text>
-            <Text style={styles.modalMessage}>
-              Your order <Text style={{ fontWeight: '700' }}>{lastPlacedOrder?.orderNumber || ''}</Text> has been submitted to the Canteen Kitchen.{'\n'}
-              Kitchen status: <Text style={{ fontWeight: '700', color: '#0a3d31' }}>PREPARING</Text>
-            </Text>
-            <View style={styles.modalDetailsBox}>
-              <Text style={styles.modalDetailLine}>
-                Order Total: <Text style={{ fontWeight: '700' }}>₹{lastPlacedOrder?.totalAmount || cartSubtotal}</Text>
-              </Text>
-              <Text style={styles.modalDetailLine}>
-                Payment Status: <Text style={{ fontWeight: '700', color: '#b45309' }}>PAYMENT PENDING</Text>
-              </Text>
-            </View>
-
-            <View style={styles.logoutNoticeBox}>
-              <AppIcon name="log-out-outline" size={17} color="#0a3d31" style={{ marginRight: 6 }} />
-              <Text style={styles.logoutNoticeText}>
-                Your order is saved. You are being logged out now. Log in with your QR code later to order more or settle your payment.
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.modalDoneBtn}
-              onPress={handleOrderDoneAndLogout}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.modalDoneBtnText}>Sign Out & Return to Login ➔</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 };
@@ -503,84 +454,87 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff',
     paddingHorizontal: 24,
-    paddingTop: 10,
-    paddingBottom: 24,
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    paddingVertical: 8,
-  },
-  stepItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepCircleActive: {
-    backgroundColor: '#0d3829',
-  },
-  stepNumber: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748b',
-  },
-  stepNumberActive: {
-    color: '#ffffff',
-  },
-  stepLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  stepLabelActive: {
-    color: '#0d3829',
-    fontWeight: '700',
-  },
-  stepConnector: {
-    width: 48,
-    height: 2,
-    backgroundColor: '#e2e8f0',
-    marginHorizontal: 12,
-  },
-  stepConnectorActive: {
-    backgroundColor: '#0d3829',
+    paddingTop: 12,
+    paddingBottom: 32,
   },
   pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0c3527',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pageTitle: {
-    fontSize: 26,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '900',
     color: '#0f172a',
+    letterSpacing: 0.5,
   },
   pageSubtitle: {
     fontSize: 12,
     color: '#64748b',
-    marginTop: 2,
+    marginTop: 1,
+  },
+  clearCartHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  clearCartHeaderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 14,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#b91c1c',
   },
   mainColumns: {
     flexDirection: 'row',
     gap: 20,
+    alignItems: 'flex-start',
   },
   leftColumn: {
-    flex: 1.15,
+    flex: 1.25,
   },
   rightColumn: {
-    flex: 0.85,
+    flex: 0.75,
   },
   cartCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     padding: 16,
@@ -590,56 +544,56 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   cartTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
     color: '#0f172a',
   },
-  cartItemCount: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  clearBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  clearBtnText: {
+  cartCountBadge: {
     fontSize: 12,
+    fontWeight: '600',
     color: '#64748b',
-    fontWeight: '500',
+  },
+  itemsTableHead: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 0.5,
   },
   itemsList: {
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   emptyCartBox: {
     alignItems: 'center',
-    paddingVertical: 24,
+    justifyContent: 'center',
+    paddingVertical: 36,
   },
   emptyCartTitle: {
-    fontSize: 13,
-    color: '#64748b',
-    marginTop: 6,
-    marginBottom: 10,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 10,
+  },
+  emptyCartSub: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 3,
+    marginBottom: 16,
   },
   browseMenuBtn: {
-    backgroundColor: '#0d3829',
-    paddingVertical: 6,
+    backgroundColor: '#0c3527',
+    paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 6,
+    borderRadius: 8,
   },
   browseMenuBtnText: {
     color: '#ffffff',
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   cartItemRow: {
     flexDirection: 'row',
@@ -649,8 +603,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f8fafc',
   },
   itemThumb: {
-    width: 60,
-    height: 60,
+    width: 48,
+    height: 48,
     borderRadius: 8,
     backgroundColor: '#f1f5f9',
   },
@@ -663,27 +617,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
   },
-  tagRow: {
+  itemMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 3,
+    marginTop: 2,
     gap: 4,
   },
-  vegDot: {
+  dietDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#16a34a',
   },
-  tagText: {
-    fontSize: 10,
+  itemCategoryText: {
+    fontSize: 11,
     color: '#64748b',
-  },
-  itemPrice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginRight: 16,
   },
   stepper: {
     flexDirection: 'row',
@@ -711,17 +658,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#0f172a',
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
+  },
+  itemTotalBox: {
+    width: 60,
+    alignItems: 'flex-end',
+    marginRight: 10,
+  },
+  itemTotalPrice: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
   },
   deleteBtn: {
     padding: 6,
   },
   noteSection: {
     marginTop: 12,
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
-    position: 'relative',
   },
   noteHeader: {
     flexDirection: 'row',
@@ -729,8 +685,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   noteTitle: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     color: '#334155',
   },
   noteInput: {
@@ -739,52 +695,128 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 12,
+    paddingVertical: 8,
+    fontSize: 11,
     color: '#0f172a',
     outlineStyle: 'none' as any,
   },
-  noteCounter: {
-    position: 'absolute',
-    right: 12,
-    bottom: 8,
-    fontSize: 10,
-    color: '#94a3b8',
+  preOrderCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+    marginBottom: 14,
   },
-  bannerCard: {
+  preOrderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  preOrderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  preOrderTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0c3527',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    padding: 2,
+  },
+  toggleBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  toggleBtnActive: {
+    backgroundColor: '#0c3527',
+  },
+  toggleBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  toggleBtnTextActive: {
+    color: '#ffffff',
+  },
+  preOrderBody: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  pickupLabel: {
+    fontSize: 11,
+    color: '#475569',
+    marginBottom: 8,
+  },
+  quickTimesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  timeChip: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  timeChipSelected: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#16a34a',
+  },
+  timeChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  timeChipTextSelected: {
+    color: '#166534',
+    fontWeight: '700',
+  },
+  customTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  customTimeLabel: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  customTimeInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 11,
+    color: '#0f172a',
+    width: 100,
+  },
+  kotTimeNotice: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 10,
   },
-  bannerIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#dcfce7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  bannerTextBox: {
-    flex: 1,
-  },
-  bannerTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#166534',
-  },
-  bannerSub: {
+  kotTimeNoticeText: {
     fontSize: 11,
-    color: '#15803d',
-    marginTop: 1,
+    color: '#166534',
   },
   summaryCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     padding: 16,
@@ -794,18 +826,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
   },
   summaryTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#0f172a',
   },
-  summaryLines: {
+  summaryRows: {
     gap: 8,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   summaryLabel: {
     fontSize: 12,
@@ -813,92 +849,149 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
+    fontWeight: '700',
+    color: '#0f172a',
   },
   summaryDivider: {
     height: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#e2e8f0',
     marginVertical: 4,
   },
-  totalRow: {
+  grandTotalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
+    alignItems: 'center',
+    paddingTop: 4,
   },
-  totalLabel: {
+  grandTotalLabel: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '900',
     color: '#0f172a',
+    letterSpacing: 0.5,
   },
-  totalValue: {
+  grandTotalValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0c3527',
+  },
+  actionsSection: {
+    marginTop: 18,
+    gap: 8,
+  },
+  checkoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0c3527',
+    borderRadius: 8,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  checkoutBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  generateBillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#0c3527',
+    borderRadius: 8,
+    paddingVertical: 11,
+    marginTop: 4,
+  },
+  generateBillBtnText: {
+    color: '#0c3527',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  actionSubtext: {
+    fontSize: 10,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  btnDisabled: {
+    opacity: 0.5,
+  },
+  canteenBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 8,
+    padding: 10,
+  },
+  canteenBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#15803d',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  successIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#dcfce7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  modalTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0f172a',
-  },
-  paymentCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 16,
-    marginBottom: 16,
-  },
-  paymentNoticeCard: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 14,
-    marginBottom: 16,
-  },
-  paymentNoticeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    textAlign: 'center',
     marginBottom: 8,
   },
-  paymentNoticeIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#eef7f2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
+  tokenPill: {
+    backgroundColor: '#0c3527',
+    borderRadius: 12,
+    paddingVertical: 3,
+    paddingHorizontal: 12,
+    marginBottom: 10,
   },
-  paymentNoticeTexts: {
-    flex: 1,
-  },
-  paymentNoticeTitle: {
-    fontSize: 13,
+  tokenPillText: {
+    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '700',
-    color: '#0f172a',
   },
-  paymentNoticeSubtitle: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 1,
-  },
-  paymentPendingPill: {
-    backgroundColor: '#fef3c7',
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    borderRadius: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    alignSelf: 'flex-start',
-    marginVertical: 8,
-  },
-  paymentPendingPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#b45309',
-    letterSpacing: 0.5,
-  },
-  paymentNoticeDesc: {
-    fontSize: 11,
+  modalMessage: {
+    fontSize: 12,
     color: '#475569',
-    lineHeight: 16,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
   },
   logoutNoticeBox: {
     flexDirection: 'row',
@@ -908,335 +1001,25 @@ const styles = StyleSheet.create({
     borderColor: '#bbf7d0',
     borderRadius: 8,
     padding: 10,
-    marginBottom: 16,
-    width: '100%',
+    marginBottom: 18,
   },
   logoutNoticeText: {
     flex: 1,
     fontSize: 11,
-    color: '#166534',
-    lineHeight: 15,
-    fontWeight: '500',
-  },
-  placeOrderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0d3829',
-    paddingVertical: 12,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  placeOrderBtnDisabled: {
-    opacity: 0.5,
-  },
-  placeOrderBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  disclaimerText: {
-    fontSize: 10,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 10,
-    lineHeight: 14,
-  },
-  disclaimerLink: {
     color: '#15803d',
-    textDecorationLine: 'underline',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 28,
-    maxWidth: 420,
-    width: '100%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  successIconCircle: {
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0f172a',
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  tokenBadge: {
-    backgroundColor: '#eef7f2',
-    color: '#0d3829',
-    fontSize: 14,
-    fontWeight: '800',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    marginBottom: 12,
-  },
-  modalMessage: {
-    fontSize: 12,
-    color: '#475569',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  modalDetailsBox: {
-    width: '100%',
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-    gap: 4,
-  },
-  modalDetailLine: {
-    fontSize: 12,
-    color: '#334155',
-  },
-  modalTrackBtn: {
-    backgroundColor: '#0a3d31',
-    width: '100%',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  modalTrackBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
+    lineHeight: 15,
   },
   modalDoneBtn: {
-    backgroundColor: '#f1f5f9',
     width: '100%',
-    paddingVertical: 11,
+    backgroundColor: '#0c3527',
+    paddingVertical: 12,
     borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  modalDoneBtnText: {
-    color: '#475569',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-
-  /* View Mode Toggle Bar */
-  viewModeToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 10,
-    padding: 4,
-    marginBottom: 16,
-    gap: 6,
-    alignSelf: 'flex-start',
-  },
-  viewModeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  viewModeBtnActive: {
-    backgroundColor: '#0a3d31',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  viewModeBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0a3d31',
-  },
-  viewModeBtnTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-
-  /* Order History Container */
-  historyContainer: {
-    width: '100%',
-    paddingBottom: 40,
-  },
-  historyHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  refreshHistoryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#ffffff',
-  },
-  refreshHistoryText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0a3d31',
-  },
-
-  /* Empty State */
-  emptyHistoryCard: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
   },
-  emptyHistoryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginTop: 12,
-  },
-  emptyHistorySub: {
-    fontSize: 12.5,
-    color: '#64748b',
-    textAlign: 'center',
-    maxWidth: 380,
-    marginTop: 6,
-    lineHeight: 18,
-  },
-
-  /* Order List & Cards */
-  ordersList: {
-    gap: 16,
-  },
-  historyOrderCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  historyOrderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    paddingBottom: 12,
-    marginBottom: 12,
-  },
-  historyOrderNum: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0a3d31',
-  },
-  historyOrderDate: {
-    fontSize: 11.5,
-    color: '#64748b',
-    marginTop: 3,
-  },
-  statusBadgePill: {
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: '#f1f5f9',
-  },
-  statusBadgePrep: {
-    backgroundColor: '#e0f2fe',
-  },
-  statusBadgeReady: {
-    backgroundColor: '#dcfce7',
-  },
-  statusBadgeDone: {
-    backgroundColor: '#f8fafc',
-  },
-  statusBadgeText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  statusTextPrep: {
-    color: '#0369a1',
-  },
-  statusTextReady: {
-    color: '#15803d',
-  },
-  statusTextDone: {
-    color: '#64748b',
-  },
-  historyItemsList: {
-    gap: 6,
-    marginBottom: 10,
-  },
-  historyItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  historyItemName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1e293b',
-  },
-  historyItemPrice: {
+  modalDoneBtnText: {
+    color: '#ffffff',
     fontSize: 13,
     fontWeight: '700',
-    color: '#334155',
-  },
-  historyNoteText: {
-    fontSize: 11.5,
-    fontStyle: 'italic',
-    color: '#d97706',
-    backgroundColor: '#fffbeb',
-    padding: 6,
-    borderRadius: 6,
-    marginBottom: 8,
-  },
-  historyFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 10,
-    marginTop: 4,
-  },
-  historyPayMethod: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  historyTotalAmount: {
-    fontSize: 13,
-    color: '#64748b',
-  },
-  historyTotalBold: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0a3d31',
   },
 });

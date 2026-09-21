@@ -59,8 +59,6 @@ export const HomeScreen: React.FC = () => {
     userProfile,
     totalCartItems,
     cartSubtotal,
-    unpaidOrders,
-    unpaidTotalAmount,
   } = useCanteen();
   const [greeting, setGreeting] = React.useState<string>(getTimeBasedGreeting);
 
@@ -133,7 +131,7 @@ export const HomeScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* 1.5 Quick Action Bar: Cart & Payment Status */}
+      {/* 1.5 Quick Action Bar: Cart */}
       <View style={styles.quickActionBar}>
         <TouchableOpacity
           style={styles.cartBannerCard}
@@ -163,30 +161,6 @@ export const HomeScreen: React.FC = () => {
             <AppIcon name="arrow-forward" size={13} color="#0d3829" style={{ marginLeft: 4 }} />
           </View>
         </TouchableOpacity>
-
-        {unpaidOrders.length > 0 && (
-          <TouchableOpacity
-            style={styles.paymentBannerCard}
-            onPress={() => setActiveTab('payment')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.cartBannerLeft}>
-              <View style={styles.paymentIconCircle}>
-                <AppIcon name="qr-code-outline" size={17} color="#ffffff" />
-              </View>
-              <View style={styles.cartBannerTexts}>
-                <Text style={styles.paymentBannerTitle}>Payment Pending</Text>
-                <Text style={styles.paymentBannerSubtitle}>
-                  {unpaidOrders.length} {unpaidOrders.length === 1 ? 'order' : 'orders'} • ₹{unpaidTotalAmount} unpaid
-                </Text>
-              </View>
-            </View>
-            <View style={styles.paymentBannerCta}>
-              <Text style={styles.paymentBannerCtaText}>Pay Bill</Text>
-              <AppIcon name="arrow-forward" size={13} color="#b45309" style={{ marginLeft: 4 }} />
-            </View>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* 2. Category Filter Pills */}

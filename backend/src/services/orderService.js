@@ -18,7 +18,9 @@ function formatOrderDoc(doc) {
     userId: obj.userId || (obj.user && String(obj.user._id || obj.user)) || 'guest',
     userName: obj.userName || 'IAS Officer',
     userPhone: obj.userPhone || '',
-    userAvatar: obj.userAvatar || '',
+    orderType: obj.orderType || 'INSTANT',
+    pickupDate: obj.pickupDate ? new Date(obj.pickupDate) : null,
+    pickupTime: obj.pickupTime || null,
     items: Array.isArray(obj.items) ? obj.items.map(item => ({
       foodId: item.foodId || item.id || '',
       id: item.id || item.foodId || '',
@@ -32,10 +34,11 @@ function formatOrderDoc(doc) {
     totalAmount: Number(obj.totalAmount || obj.subtotal) || 0,
     grandTotal: Number(obj.grandTotal || obj.totalAmount || obj.subtotal) || 0,
     paymentMethod: obj.paymentMethod || 'online',
-    paymentStatus: obj.paymentStatus || 'PAYMENT_PENDING',
+    paymentStatus: obj.paymentStatus || 'UNPAID',
     orderNote: obj.orderNote || '',
     mealSlot: obj.mealSlot || 'General',
     status: obj.status || 'PREPARING',
+    kitchenStatus: obj.kitchenStatus || 'NEW',
     tokenNumber: obj.tokenNumber || Math.floor(10 + Math.random() * 90),
     billNumber: obj.billNumber || null,
     createdAt: obj.createdAt
@@ -117,10 +120,15 @@ const createOrder = async (orderData) => {
     totalAmount,
     grandTotal: totalAmount,
     paymentMethod: orderData.paymentMethod || 'online',
-    paymentStatus: 'PAYMENT_PENDING',
+    paymentStatus: orderData.paymentStatus || 'UNPAID',
+    orderType: orderData.orderType || 'INSTANT',
+    ...(orderData.orderType === 'PRE_ORDER' ? {
+      pickupDate: orderData.pickupDate,
+      pickupTime: orderData.pickupTime
+    } : {}),
     orderNote: orderData.orderNote || '',
     mealSlot: orderData.mealSlot || 'General',
-    status: 'PREPARING',
+    status: orderData.orderType === 'PRE_ORDER' ? 'PRE_ORDERED' : 'PREPARING',
     tokenNumber
   };
 
@@ -146,7 +154,40 @@ const createOrder = async (orderData) => {
     id: 'ord-' + Date.now()
   });
 
-  return savedOrder || jsonOrder;
+  const finalOrder = savedOrder || jsonOrder;
+
+  // Emit KOT event to kitchen via Socket.io in real-time
+  try {
+    const serverModule = require('../../server');
+    const io = serverModule.io || (serverModule.getIO && serverModule.getIO());
+    if (io) {
+      const kotPayload = {
+        orderNumber: finalOrder.orderNumber,
+        tokenNumber: finalOrder.tokenNumber,
+        customerName: finalOrder.userName || 'IAS Officer',
+        userName: finalOrder.userName || 'IAS Officer',
+        userPhone: finalOrder.userPhone || '',
+        foodItemNames: (finalOrder.items || []).map(i => i.name),
+        items: finalOrder.items,
+        orderNote: finalOrder.orderNote || '',
+        orderCreationTime: finalOrder.createdAt,
+        orderTime: finalOrder.createdAt,
+        pickupTime: finalOrder.pickupTime || null,
+        pickupDate: finalOrder.pickupDate || null,
+        orderType: finalOrder.orderType || 'INSTANT',
+        kitchenStatus: finalOrder.kitchenStatus || 'NEW'
+      };
+
+      io.emit('newKOT', kotPayload);
+      io.of('/kitchen').emit('newKOT', kotPayload);
+      io.emit('newOrder', finalOrder);
+      console.log(`[KOT] Dispatched live ticket for Order #${finalOrder.orderNumber} (Status: NEW)`);
+    }
+  } catch (e) {
+    console.warn('[KOT] Failed to emit newKOT event:', e.message);
+  }
+
+  return finalOrder;
 };
 
 const getUserOrders = async (userIdOrPhone) => {
@@ -160,21 +201,34 @@ const getUserOrders = async (userIdOrPhone) => {
   if (mongoose.connection.readyState === 1) {
     try {
       const isObjectId = mongoose.Types.ObjectId.isValid(str);
+      const userPhones = [str];
+      if (cleanPhone) userPhones.push(cleanPhone);
+
+      // If str is a valid user ObjectId, also retrieve the user document to grab associated phone numbers
+      if (isObjectId) {
+        try {
+          const userDoc = await User.findById(str);
+          if (userDoc && userDoc.phone) {
+            userPhones.push(userDoc.phone);
+            const pClean = userDoc.phone.replace(/\D/g, '').slice(-10);
+            if (pClean) userPhones.push(pClean);
+          }
+        } catch {}
+      }
+
       const query = {
         $or: [
           { userId: str },
           ...(isObjectId ? [{ user: str }] : []),
-          { userPhone: str },
+          ...userPhones.map(p => ({ userPhone: p })),
           ...(cleanPhone ? [{ userPhone: new RegExp(cleanPhone + '$') }] : [])
         ]
       };
 
       const orders = await Order.find(query).sort({ createdAt: -1 });
-      if (orders && orders.length > 0) {
-        return orders.map(formatOrderDoc);
-      }
+      return orders.map(formatOrderDoc);
     } catch (e) {
-      console.warn('[ORDER] MongoDB getUserOrders fallback:', e.message);
+      console.warn('[ORDER] MongoDB getUserOrders error:', e.message);
     }
   }
 
@@ -243,6 +297,17 @@ const getAllOrdersForAdmin = async (filter = {}) => {
   return dataStore.getOrders(filter);
 };
 
+const VALID_TRANSITIONS = {
+  'NEW': ['ACCEPTED', 'CANCELLED'],
+  'PENDING': ['ACCEPTED', 'CANCELLED'],
+  'PRE_ORDERED': ['ACCEPTED', 'CANCELLED'],
+  'ACCEPTED': ['PREPARING', 'CANCELLED'],
+  'PREPARING': ['READY', 'CANCELLED'],
+  'READY': ['COMPLETED'],
+  'COMPLETED': [],
+  'CANCELLED': []
+};
+
 const updateOrderStatus = async (orderId, status) => {
   if (!orderId || !status) {
     const error = new Error('Order ID and status are required');
@@ -250,7 +315,33 @@ const updateOrderStatus = async (orderId, status) => {
     throw error;
   }
 
+  const targetStatus = status.toUpperCase().trim();
+  const existingOrder = await getOrderById(orderId);
+  const currentStatus = (existingOrder.kitchenStatus || existingOrder.status || 'NEW').toUpperCase().trim();
+
+  // Validate state transitions (Requirement 4 & 18: NEW -> ACCEPTED -> PREPARING -> READY -> COMPLETED)
+  if (currentStatus !== targetStatus) {
+    const allowed = VALID_TRANSITIONS[currentStatus];
+    if (allowed && !allowed.includes(targetStatus)) {
+      const error = new Error(
+        `Invalid status transition from ${currentStatus} to ${targetStatus}. Expected next status: ${allowed.join(' or ') || 'None (order finalized)'}`
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
   let updatedOrder = null;
+  const updateFields = {
+    status: targetStatus,
+    kitchenStatus: targetStatus,
+    updatedAt: new Date()
+  };
+
+  // Requirement 5: When admin changes READY -> COMPLETED, backend must automatically make order paymentStatus: UNPAID
+  if (targetStatus === 'COMPLETED') {
+    updateFields.paymentStatus = 'UNPAID';
+  }
 
   if (mongoose.connection.readyState === 1) {
     try {
@@ -262,8 +353,8 @@ const updateOrderStatus = async (orderId, status) => {
             { orderNumber: orderId }
           ]
         },
-        { $set: { status, updatedAt: new Date() } },
-        { new: true }
+        { $set: updateFields },
+        { returnDocument: 'after' }
       );
       if (mongoOrder) {
         updatedOrder = formatOrderDoc(mongoOrder);
@@ -273,14 +364,33 @@ const updateOrderStatus = async (orderId, status) => {
     }
   }
 
-  const jsonOrder = dataStore.updateOrderStatus(orderId, status);
+  const jsonOrder = dataStore.updateOrderStatus(orderId, targetStatus);
+  if (jsonOrder && targetStatus === 'COMPLETED') {
+    jsonOrder.paymentStatus = 'UNPAID';
+  }
   if (!updatedOrder && !jsonOrder) {
     const error = new Error('Order not found');
     error.statusCode = 404;
     throw error;
   }
 
-  return updatedOrder || jsonOrder;
+  const finalOrder = updatedOrder || jsonOrder;
+
+  // Real-time broadcast to all connected clients and kitchen displays (Requirement 5 & 6)
+  try {
+    const serverModule = require('../../server');
+    const io = serverModule.io || (serverModule.getIO && serverModule.getIO());
+    if (io) {
+      io.emit('orderStatusUpdated', finalOrder);
+      io.emit('orderUpdated', finalOrder);
+      io.of('/kitchen').emit('orderStatusUpdated', finalOrder);
+      console.log(`[Socket.IO] Broadcasted orderStatusUpdated for #${finalOrder.orderNumber}: ${currentStatus} -> ${targetStatus}`);
+    }
+  } catch (sockErr) {
+    console.warn('[ORDER] Socket.IO broadcast warning:', sockErr.message);
+  }
+
+  return finalOrder;
 };
 
 const getAdminStats = async () => {
@@ -329,7 +439,7 @@ const updatePaymentStatus = async (orderId, paymentStatus) => {
     throw error;
   }
 
-  const validStatuses = ['PAYMENT_PENDING', 'PAID'];
+  const validStatuses = ['UNPAID', 'PAYMENT_PENDING', 'PAID'];
   if (!validStatuses.includes(paymentStatus)) {
     const error = new Error(`Invalid payment status. Must be one of: ${validStatuses.join(', ')}`);
     error.statusCode = 400;
@@ -349,7 +459,7 @@ const updatePaymentStatus = async (orderId, paymentStatus) => {
           ]
         },
         { $set: { paymentStatus, updatedAt: new Date() } },
-        { new: true }
+        { returnDocument: 'after' }
       );
       if (mongoOrder) {
         updatedOrder = formatOrderDoc(mongoOrder);
@@ -366,12 +476,28 @@ const updatePaymentStatus = async (orderId, paymentStatus) => {
     throw error;
   }
 
-  return updatedOrder || jsonOrder;
+  const finalOrder = updatedOrder || jsonOrder;
+
+  // Real-time broadcast to all connected clients and kitchen displays
+  try {
+    const serverModule = require('../../server');
+    const io = serverModule.io || (serverModule.getIO && serverModule.getIO());
+    if (io) {
+      io.emit('orderStatusUpdated', finalOrder);
+      io.emit('orderUpdated', finalOrder);
+      io.of('/kitchen').emit('orderStatusUpdated', finalOrder);
+      console.log(`[Socket.IO] Broadcasted paymentStatus for #${finalOrder.orderNumber}: ${finalOrder.paymentStatus}`);
+    }
+  } catch (sockErr) {
+    console.warn('[ORDER] Socket.IO payment broadcast warning:', sockErr.message);
+  }
+
+  return finalOrder;
 };
 
 const getUnpaidOrders = async (userIdOrPhone) => {
   const allUserOrders = await getUserOrders(userIdOrPhone);
-  const unpaid = (allUserOrders || []).filter(o => o.paymentStatus === 'PAYMENT_PENDING');
+  const unpaid = (allUserOrders || []).filter(o => o.paymentStatus === 'UNPAID' || o.paymentStatus === 'PAYMENT_PENDING');
   const totalOutstanding = unpaid.reduce((sum, o) => sum + (Number(o.totalAmount || o.grandTotal) || 0), 0);
   return {
     orders: unpaid,

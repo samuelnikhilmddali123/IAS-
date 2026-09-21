@@ -26,6 +26,13 @@ const userSchema = new mongoose.Schema(
             default: ""
         },
 
+        passwordUniquenessFingerprint: {
+            type: String,
+            unique: true,
+            sparse: true,
+            index: true
+        },
+
         pin: {
             type: String,
             default: "123456"
@@ -54,10 +61,56 @@ const userSchema = new mongoose.Schema(
         role: {
             type: String,
             default: "user"
+        },
+
+        // Lifetime Login QR Access Fields
+        lifetimeQrId: {
+            type: String,
+            default: "",
+            index: true
+        },
+
+        lifetimeQrPayload: {
+            type: String,
+            default: ""
+        },
+
+        lifetimeQrDataUrl: {
+            type: String,
+            default: ""
+        },
+
+        lifetimeQrImage: {
+            type: String,
+            default: ""
+        },
+
+        lifetimeQrTokenHash: {
+            type: String,
+            default: "",
+            index: true
+        },
+
+        qrRevoked: {
+            type: Boolean,
+            default: false
+        },
+
+        qrRevokedAt: {
+            type: Date,
+            default: null
         }
     },
     {
-        timestamps: true
+        timestamps: true,
+        toJSON: {
+            transform: function (doc, ret) {
+                delete ret.password;
+                delete ret.passwordUniquenessFingerprint;
+                delete ret.lifetimeQrTokenHash;
+                return ret;
+            }
+        }
     }
 );
 

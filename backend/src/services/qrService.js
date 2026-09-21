@@ -49,20 +49,20 @@ function hashToken(randomToken) {
 }
 
 /**
- * Generates a one-time, cryptographically secure QR login token for a registered user.
- * Invalidates any existing unused QR tokens for this user.
+ * Generates a permanent, cryptographically secure LIFETIME QR login credential for a registered user.
+ * The QR code does not expire and can be used for repeated logins until explicitly revoked or regenerated.
  */
 async function createQrLoginToken(user) {
   const tokens = readTokens();
   const now = new Date();
-  const userId = user.id || user._id || user.officerId;
+  const userId = String(user.id || user._id || user.officerId);
   const userPhone = user.phone || user.mobile;
 
-  // Invalidate any previous unused QR for this user
+  // Revoke any previous active QR for this user when generating a fresh one
   tokens.forEach((t) => {
-    if ((t.userId === userId || t.userPhone === userPhone) && !t.used) {
-      t.used = true;
-      t.usedAt = now.toISOString();
+    if (t.userId === userId || t.userPhone === userPhone) {
+      t.revoked = true;
+      t.revokedAt = now.toISOString();
       t.invalidatedByNewQr = true;
     }
   });
@@ -71,12 +71,8 @@ async function createQrLoginToken(user) {
   const randomToken = crypto.randomBytes(32).toString('hex');
   const signature = computeSignature(qrId, randomToken);
 
-  // App-Only Opaque payload. Contains NO URL, NO PIN, NO JWT, NO plaintext personal info.
-  // Google Lens or Chrome scanner sees only: APPQR:v1:qr_...
+  // App-Only Opaque payload: APPQR:v1:qr_...
   const qrPayload = `APPQR:v1:${qrId}.${randomToken}.${signature}`;
-
-  // Expiration: 5 minutes from generation
-  const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
 
   // Generate QR Image file on disk and Data URL
   const qrFilePath = path.join(UPLOADS_QR_DIR, `${qrId}.png`);
@@ -111,13 +107,17 @@ async function createQrLoginToken(user) {
     qrImage: `/uploads/qr/${qrId}.png`,
     qrDataUrl,
     createdAt: now.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-    used: false,
-    usedAt: null,
+    isLifetime: true,
+    expiresAt: null, // Lifetime validity: No automatic expiry
+    revoked: false,
+    revokedAt: null,
+    lastUsedAt: null,
+    useCount: 0
   };
 
   tokens.unshift(tokenRecord);
-  if (tokens.length > 200) tokens.length = 200;
+  // Keep up to 500 records in memory cache
+  if (tokens.length > 500) tokens.length = 500;
   writeTokens(tokens);
 
   return {
@@ -125,13 +125,15 @@ async function createQrLoginToken(user) {
     qrPayload,
     qrImage: tokenRecord.qrImage,
     qrDataUrl,
-    expiresAt: tokenRecord.expiresAt,
+    tokenHash: tokenRecord.tokenHash,
+    isLifetime: true,
+    expiresAt: null,
   };
 }
 
 /**
- * Validates a scanned QR payload, checks signature, expiry, and one-time use.
- * Returns validation result and consumes the token if valid.
+ * Validates a scanned QR payload, checking cryptographic signature and revocation status.
+ * Allows repeated authentication with the same lifetime QR code.
  */
 function validateAndConsumeQr(qrPayload) {
   if (!qrPayload || typeof qrPayload !== 'string') {
@@ -140,49 +142,44 @@ function validateAndConsumeQr(qrPayload) {
 
   const trimmed = qrPayload.trim();
   if (!trimmed.startsWith('APPQR:v1:')) {
-    return { valid: false, reason: 'Invalid QR code' };
+    return { valid: false, reason: 'Invalid QR code format' };
   }
 
   const content = trimmed.slice('APPQR:v1:'.length);
   const parts = content.split('.');
   if (parts.length !== 3) {
-    return { valid: false, reason: 'Invalid QR code' };
+    return { valid: false, reason: 'Invalid QR code structure' };
   }
 
   const [qrId, randomToken, signature] = parts;
 
-  // 1. Check signature integrity
+  // 1. Check cryptographic signature integrity
   const expectedSig = computeSignature(qrId, randomToken);
   if (signature !== expectedSig) {
-    return { valid: false, reason: 'Invalid QR code' };
+    return { valid: false, reason: 'QR code signature mismatch / security verification failed' };
   }
 
   const tokens = readTokens();
   const tokenRecord = tokens.find((t) => t.id === qrId);
 
   if (!tokenRecord) {
-    return { valid: false, reason: 'Invalid QR code' };
+    return { valid: false, reason: 'QR code not recognized by central security database' };
   }
 
-  // 2. Check if already used
-  if (tokenRecord.used) {
-    return { valid: false, reason: 'QR code already used' };
+  // 2. Check revocation status
+  if (tokenRecord.revoked) {
+    return { valid: false, reason: 'This QR code has been revoked. Please request a new QR from the admin desk.' };
   }
 
-  // 3. Check expiration (5 minutes)
-  const now = new Date();
-  if (new Date(tokenRecord.expiresAt) < now) {
-    return { valid: false, reason: 'QR code expired' };
-  }
-
-  // 4. Verify token hash against stored hash
+  // 3. Verify token hash against stored hash
   if (hashToken(randomToken) !== tokenRecord.tokenHash) {
-    return { valid: false, reason: 'Invalid QR code' };
+    return { valid: false, reason: 'QR code token hash verification failed' };
   }
 
-  // 5. Consume token (One-time use)
-  tokenRecord.used = true;
-  tokenRecord.usedAt = now.toISOString();
+  // 4. Update usage stats (without invalidating the lifetime token)
+  const now = new Date();
+  tokenRecord.lastUsedAt = now.toISOString();
+  tokenRecord.useCount = (tokenRecord.useCount || 0) + 1;
   writeTokens(tokens);
 
   return {
@@ -190,8 +187,41 @@ function validateAndConsumeQr(qrPayload) {
     userId: tokenRecord.userId,
     userPhone: tokenRecord.userPhone,
     userName: tokenRecord.userName,
-    consumedAt: tokenRecord.usedAt,
+    lastUsedAt: tokenRecord.lastUsedAt,
+    isLifetime: true
   };
+}
+
+/**
+ * Revokes a user's lifetime QR access token by userId or qrId.
+ */
+function revokeQr(identifier) {
+  if (!identifier) return false;
+  const tokens = readTokens();
+  const now = new Date().toISOString();
+  let found = false;
+
+  tokens.forEach((t) => {
+    if (t.id === identifier || t.userId === String(identifier) || t.userPhone === String(identifier)) {
+      t.revoked = true;
+      t.revokedAt = now;
+      found = true;
+    }
+  });
+
+  if (found) {
+    writeTokens(tokens);
+  }
+  return found;
+}
+
+/**
+ * Regenerates a fresh lifetime QR code for a user, revoking previous ones.
+ */
+async function regenerateQr(user) {
+  const userId = String(user.id || user._id || user.officerId);
+  revokeQr(userId);
+  return await createQrLoginToken(user);
 }
 
 function getTokens(limit = 50) {
@@ -202,5 +232,7 @@ function getTokens(limit = 50) {
 module.exports = {
   createQrLoginToken,
   validateAndConsumeQr,
+  revokeQr,
+  regenerateQr,
   getTokens,
 };

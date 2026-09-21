@@ -266,7 +266,7 @@ export const LoginScreen: React.FC = () => {
 
       setIsVerifyingQr(true);
       setQrErrorMsg('');
-      setQrSuccessMsg('Verifying one-time token with Central Server...');
+      setQrSuccessMsg('Verifying lifetime credentials with Central Server...');
       stopLiveCamera();
 
       try {
@@ -435,32 +435,22 @@ export const LoginScreen: React.FC = () => {
   }, [regFullName]);
 
   const handleLogin = async () => {
-    if (!mobile.trim()) {
-      setErrorMsg('Please enter your 10-digit mobile number');
-      return;
-    }
-
-    if (mobile.trim().length < 10) {
-      setErrorMsg('Please enter a valid 10-digit mobile number');
-      return;
-    }
-
     if (!pin.trim()) {
-      setErrorMsg('Please enter your 6-digit PIN');
+      setErrorMsg('Please enter your password');
       return;
     }
 
     if (pin.trim().length < 4) {
-      setErrorMsg('Please enter your PIN (min 4-6 digits)');
+      setErrorMsg('Please enter your password (min 4 characters)');
       return;
     }
 
     setErrorMsg('');
     setIsSubmitting(true);
     try {
-      const result = await login(mobile.trim(), pin.trim());
+      const result = await login(pin.trim());
       if (!result.success) {
-        setErrorMsg(result.error || 'Invalid phone number or password');
+        setErrorMsg(result.error || 'Invalid password.');
       }
     } catch (e: any) {
       setErrorMsg('Unable to connect to backend server. Please verify backend is running.');
@@ -681,7 +671,7 @@ export const LoginScreen: React.FC = () => {
                 {isVerifyingQr ? (
                   <View style={styles.qrStatusRow}>
                     <ActivityIndicator size="small" color="#0a3d31" style={{ marginRight: 8 }} />
-                    <Text style={styles.qrStatusVerifyingText}>Verifying one-time token...</Text>
+                    <Text style={styles.qrStatusVerifyingText}>Verifying lifetime credentials...</Text>
                   </View>
                 ) : null}
 
@@ -755,8 +745,8 @@ export const LoginScreen: React.FC = () => {
           ) : authMode === 'login' ? (
             <View style={styles.cardWrapper}>
               <View style={styles.loginCard}>
-                <Text style={styles.cardHeading}>Login to Canteen Services</Text>
-                <Text style={styles.cardSubheading}>Access your account securely</Text>
+                <Text style={styles.cardHeading}>LOGIN</Text>
+                <Text style={styles.cardSubheading}>Enter your unique password to continue</Text>
 
                 {errorMsg ? (
                   <View style={styles.errorContainer}>
@@ -764,39 +754,9 @@ export const LoginScreen: React.FC = () => {
                   </View>
                 ) : null}
 
-                {/* Mobile Number */}
+                {/* Password Input Only (Requirement 13) */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Mobile Number</Text>
-                  <TouchableOpacity
-                    style={styles.inputContainer}
-                    activeOpacity={1}
-                    onPress={() => mobileInputRef.current?.focus()}
-                  >
-                    <AppIcon name="call-outline" size={17} color="#4b5563" />
-                    <TextInput
-                      ref={mobileInputRef}
-                      style={styles.textInput}
-                      placeholder="Enter registered mobile number"
-                      placeholderTextColor="#9ca3af"
-                      keyboardType="phone-pad"
-                      disableFullscreenUI={true}
-                      value={mobile}
-                      onChangeText={(val) => {
-                        setMobile(val);
-                        if (errorMsg) setErrorMsg('');
-                      }}
-                      maxLength={15}
-                      returnKeyType="next"
-                      onSubmitEditing={() => pinInputRef.current?.focus()}
-                      onFocus={() => handleFocusField(0)}
-                      onBlur={handleFieldBlur}
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {/* PIN */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>PIN</Text>
+                  <Text style={styles.inputLabel}>Password</Text>
                   <TouchableOpacity
                     style={styles.inputContainer}
                     activeOpacity={1}
@@ -806,9 +766,9 @@ export const LoginScreen: React.FC = () => {
                     <TextInput
                       ref={pinInputRef}
                       style={styles.textInput}
-                      placeholder="Enter 6-digit PIN"
+                      placeholder="Enter your unique password"
                       placeholderTextColor="#9ca3af"
-                      keyboardType="numeric"
+                      autoCapitalize="none"
                       disableFullscreenUI={true}
                       secureTextEntry={!showPin}
                       value={pin}
@@ -816,10 +776,9 @@ export const LoginScreen: React.FC = () => {
                         setPin(val);
                         if (errorMsg) setErrorMsg('');
                       }}
-                      maxLength={6}
                       returnKeyType="done"
                       onSubmitEditing={handleLogin}
-                      onFocus={() => handleFocusField(1)}
+                      onFocus={() => handleFocusField(0)}
                       onBlur={handleFieldBlur}
                     />
                     <TouchableOpacity
@@ -847,7 +806,7 @@ export const LoginScreen: React.FC = () => {
                   {isSubmitting ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <Text style={styles.primaryActionButtonText}>Login  →</Text>
+                    <Text style={styles.primaryActionButtonText}>LOGIN</Text>
                   )}
                 </TouchableOpacity>
 
@@ -873,7 +832,7 @@ export const LoginScreen: React.FC = () => {
                   <View style={styles.qrTextCol}>
                     <Text style={styles.qrActionTitle}>Scan QR to Login</Text>
                     <Text style={styles.qrActionSubtitle}>
-                      Scan the one-time code sent to your WhatsApp by Admin
+                      Scan the lifetime login QR credential sent to your WhatsApp
                     </Text>
                   </View>
                   <AppIcon name="chevron-forward" size={18} color="#0a3d31" />
@@ -1088,7 +1047,7 @@ export const LoginScreen: React.FC = () => {
                   <View style={styles.waDispatchNotice}>
                     <AppIcon name="shield-checkmark" size={13} color="#15803d" style={{ marginRight: 6 }} />
                     <Text style={styles.waDispatchText}>
-                      A one-time login QR code will be dispatched to your WhatsApp from the Admin Desk (+91 91212 66269).
+                      A permanent lifetime login QR code will be dispatched to your WhatsApp from the Admin Desk (+91 91212 66269).
                     </Text>
                   </View>
 

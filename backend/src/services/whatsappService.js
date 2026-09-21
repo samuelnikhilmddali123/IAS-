@@ -217,8 +217,8 @@ async function sendQrMessage({ to, userName, qrImage, qrDataUrl, qrPayload, expi
     ``,
     `📸 *Login QR Code:* Scan the attached QR image using the live camera on the app login screen to securely authenticate.`,
     ``,
-    `⏱️ *Validity:* 5 Minutes (Single-Use Only)`,
-    `🔒 Sent securely from Admin Desk (*${fromNumber}*). Do not forward.`,
+    `♾️ *Validity:* Lifetime Access (Secure Officer Login QR)`,
+    `🔒 Sent securely from Admin Desk (*${fromNumber}*). Keep confidential.`,
   ].join('\n');
 
   const dispatchRecord = {
@@ -376,13 +376,87 @@ function getOutbox(limit = 50) {
 // Start WhatsApp Web Client automatically on module load
 initWhatsAppWebClient();
 
+function sendBillMessage({ to, billText, qrDataUrl }) {
+  const cfg = readConfig();
+  const fromNumber = cfg.adminWhatsAppNumber || '+91 91212 66269';
+  const cleanTo = (to || '').trim();
+
+  // Validate registered mobile number
+  if (!cleanTo || cleanTo.replace(/\D/g, '').length < 10) {
+    return {
+      success: false,
+      status: 'FAILED',
+      error: 'Invalid or missing registered mobile number. A 10-digit number is required.',
+      from: fromNumber,
+      to: cleanTo,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  const recipientJid = formatWhatsAppJid(cleanTo);
+
+  const dispatchRecord = {
+    id: `msg_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+    from: fromNumber,
+    to: cleanTo,
+    billText: billText || '',
+    qrDataUrl: qrDataUrl || null,
+    messageText: billText,
+    provider: 'whatsapp_web',
+    status: 'QUEUED',
+    timestamp: new Date().toISOString(),
+  };
+
+  if (waSocket && connectionStatus === 'CONNECTED') {
+    try {
+      let imageBuffer = null;
+      if (qrDataUrl) {
+        const base64Data = qrDataUrl.replace(/^data:image\/\w+;base64,/, '');
+        imageBuffer = Buffer.from(base64Data, 'base64');
+      }
+      if (imageBuffer) {
+        waSocket.sendMessage(recipientJid, { image: imageBuffer, caption: billText, mimetype: 'image/png' });
+      } else {
+        waSocket.sendMessage(recipientJid, { text: billText });
+      }
+      dispatchRecord.status = 'DELIVERED';
+      dispatchRecord.providerStatus = 'SENT_VIA_WHATSAPP_WEB_LIVE';
+    } catch (err) {
+      console.error('[WhatsApp Web] Error sending bill message:', err);
+      dispatchRecord.status = 'FAILED';
+      dispatchRecord.providerStatus = `ERROR: ${err.message}`;
+    }
+  } else {
+    dispatchRecord.status = 'PENDING_PAIRING';
+    dispatchRecord.providerStatus = 'WAITING_FOR_ADMIN_WHATSAPP_PAIRING (Scan QR on Admin Dashboard http://localhost:5001/admin/)';
+    console.warn(`[WhatsApp Web] WhatsApp not linked yet. Pair at http://localhost:5001/admin/ to deliver to ${cleanTo}`);
+  }
+
+  const outbox = readOutbox();
+  outbox.unshift(dispatchRecord);
+  if (outbox.length > 200) outbox.length = 200;
+  writeOutbox(outbox);
+
+  return {
+    success: dispatchRecord.status === 'DELIVERED' || dispatchRecord.status === 'PENDING_PAIRING',
+    messageId: dispatchRecord.id,
+    from: fromNumber,
+    to: cleanTo,
+    status: dispatchRecord.status,
+    providerStatus: dispatchRecord.providerStatus,
+    timestamp: dispatchRecord.timestamp,
+  };
+}
+
 module.exports = {
   getConfig,
   saveConfig,
   sendQrMessage,
   sendTestMessage,
+  sendBillMessage,
   getOutbox,
   initWhatsAppWebClient,
   disconnectWhatsAppWebClient,
   getWhatsAppWebStatus,
 };
+

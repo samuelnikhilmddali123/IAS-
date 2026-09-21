@@ -1,4 +1,4 @@
-﻿const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
@@ -6,6 +6,7 @@ const User = require('../models/User');
 const dataStore = require('../storage/dataStore');
 const qrService = require('./qrService');
 const whatsappService = require('./whatsappService');
+const { generatePasswordFingerprint } = require('../utils/cryptoUtils');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'canteen_super_secret_jwt_key_2026_secure';
 
@@ -144,9 +145,40 @@ const registerUser = async (userData) => {
     throw error;
   }
   if (!officerPin || officerPin.length < 4) {
-    const error = new Error('A 6-digit PIN is required');
+    const error = new Error('A 6-digit PIN / password is required');
     error.statusCode = 400;
     throw error;
+  }
+
+  // Generate secure deterministic fingerprint for global password uniqueness (Requirement 9, 10, 11, 12)
+  const passwordFingerprint = generatePasswordFingerprint(officerPin);
+  if (!passwordFingerprint) {
+    const error = new Error('A valid password is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Pre-check for duplicate password across all users
+  if (mongoose.connection.readyState === 1) {
+    const existingWithFp = await User.findOne({ passwordUniquenessFingerprint: passwordFingerprint });
+    if (existingWithFp) {
+      const cleanPhone = officerPhone.replace(/\D/g, '').slice(-10);
+      const isSameUser = existingWithFp.phone === officerPhone || (cleanPhone && existingWithFp.phone && existingWithFp.phone.endsWith(cleanPhone));
+      if (!isSameUser) {
+        const error = new Error('This password is already used. Please choose another password.');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+  }
+
+  if (dataStore.getUserByFingerprint) {
+    const existingInStore = dataStore.getUserByFingerprint(passwordFingerprint);
+    if (existingInStore && existingInStore.phone !== officerPhone) {
+      const error = new Error('This password is already used. Please choose another password.');
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   const hashedPassword = await bcrypt.hash(officerPin, 10);
@@ -176,6 +208,7 @@ const registerUser = async (userData) => {
         mongoUser.phone = officerPhone;
         mongoUser.email = officerEmail;
         mongoUser.password = hashedPassword;
+        mongoUser.passwordUniquenessFingerprint = passwordFingerprint;
         mongoUser.pin = officerPin;
         if (avatar) mongoUser.avatar = avatar;
         if (designation) mongoUser.designation = designation;
@@ -188,6 +221,7 @@ const registerUser = async (userData) => {
           email: officerEmail,
           phone: officerPhone,
           password: hashedPassword,
+          passwordUniquenessFingerprint: passwordFingerprint,
           pin: officerPin,
           avatar: defaultAvatar,
           designation: defaultDesignation,
@@ -209,6 +243,11 @@ const registerUser = async (userData) => {
         officerId: mongoUser.officerId || generatedOfficerId
       };
     } catch (e) {
+      if (e.code === 11000 || (e.message && e.message.includes('passwordUniquenessFingerprint'))) {
+        const error = new Error('This password is already used. Please choose another password.');
+        error.statusCode = 400;
+        throw error;
+      }
       console.warn('[AUTH] MongoDB user registration warning:', e.message);
     }
   }
@@ -219,6 +258,7 @@ const registerUser = async (userData) => {
     email: officerEmail,
     phone: officerPhone,
     pin: officerPin,
+    passwordUniquenessFingerprint: passwordFingerprint,
     avatar: defaultAvatar,
     designation: defaultDesignation,
     department: defaultDepartment,
@@ -229,15 +269,28 @@ const registerUser = async (userData) => {
     savedUser = fallbackUser;
   }
 
-  // 3. Generate one-time secure QR login token
+  // 3. Generate permanent, cryptographically secure Lifetime QR login credential
   let qrInfo = null;
   try {
     qrInfo = await qrService.createQrLoginToken(savedUser);
+    if (qrInfo && mongoose.connection.readyState === 1 && savedUser._id) {
+      await User.findByIdAndUpdate(savedUser._id, {
+        $set: {
+          lifetimeQrId: qrInfo.qrId,
+          lifetimeQrPayload: qrInfo.qrPayload,
+          lifetimeQrDataUrl: qrInfo.qrDataUrl,
+          lifetimeQrImage: qrInfo.qrImage,
+          lifetimeQrTokenHash: qrInfo.tokenHash,
+          qrRevoked: false,
+          qrRevokedAt: null
+        }
+      });
+    }
   } catch (err) {
-    console.error('Error generating QR login token:', err);
+    console.error('Error generating Lifetime QR login token:', err);
   }
 
-  // 4. Dispatch QR message via WhatsApp
+  // 4. Dispatch Lifetime QR message via WhatsApp
   let whatsappInfo = null;
   if (qrInfo) {
     try {
@@ -247,11 +300,11 @@ const registerUser = async (userData) => {
         qrImage: qrInfo.qrImage,
         qrDataUrl: qrInfo.qrDataUrl,
         qrPayload: qrInfo.qrPayload,
-        expiresAt: qrInfo.expiresAt,
+        expiresAt: null,
         qrId: qrInfo.qrId,
       });
     } catch (err) {
-      console.error('Error sending QR via admin WhatsApp:', err);
+      console.error('Error sending Lifetime QR via admin WhatsApp:', err);
     }
   }
 
@@ -281,70 +334,121 @@ const registerUser = async (userData) => {
   };
 };
 
-const loginUser = async (loginIdentifier, passwordOrPin) => {
-  const ident = (loginIdentifier || '').trim();
-  const pin = (passwordOrPin || '').trim();
+const loginUser = async (arg1, arg2) => {
+  // Password-Only Login (Requirement 13 & 14)
+  let candidatePassword = '';
+  let candidateIdent = '';
 
-  if (!ident || !pin) {
-    const error = new Error('Mobile number / email and 6-digit PIN are required');
+  if (typeof arg1 === 'object' && arg1 !== null) {
+    candidatePassword = String(arg1.password || arg1.pin || '').trim();
+    candidateIdent = String(arg1.phone || arg1.mobile || arg1.email || '').trim();
+  } else if (arg2 !== undefined && arg2 !== null && String(arg2).trim() !== '') {
+    const str1 = String(arg1 || '').trim();
+    const str2 = String(arg2 || '').trim();
+    // If str1 looks like phone/email and str2 is password
+    if (str1.includes('@') || /^\+?\d{8,14}$/.test(str1.replace(/[\s-]/g, ''))) {
+      candidateIdent = str1;
+      candidatePassword = str2;
+    } else {
+      candidatePassword = str1;
+      candidateIdent = str2;
+    }
+  } else {
+    candidatePassword = String(arg1 || '').trim();
+  }
+
+  if (!candidatePassword) {
+    const error = new Error('Password is required');
     error.statusCode = 400;
     throw error;
   }
 
-  const cleanPhone = ident.replace(/\D/g, '').slice(-10);
+  const fingerprint = generatePasswordFingerprint(candidatePassword);
   let user = null;
 
-  // 1. Primary: Search in MongoDB
-  if (mongoose.connection.readyState === 1) {
-    try {
-      const mongoUser = await User.findOne({
-        $or: [
-          { phone: ident },
-          ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : []),
-          { email: ident.toLowerCase() }
-        ]
-      });
-
-      if (mongoUser) {
-        user = {
-          id: String(mongoUser._id),
-          name: mongoUser.name,
-          email: mongoUser.email,
-          phone: mongoUser.phone,
-          pin: mongoUser.pin,
-          password: mongoUser.password,
-          avatar: mongoUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-          designation: mongoUser.designation || 'IAS Officer • Special Duty',
-          department: mongoUser.department || 'Cabinet Secretariat • Government of India',
-          officerId: mongoUser.officerId || ('GOI-DL-2026-' + String(mongoUser._id).slice(-4))
-        };
+  // 1. Primary: Lookup directly by unique password fingerprint
+  if (fingerprint) {
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const mongoUser = await User.findOne({ passwordUniquenessFingerprint: fingerprint });
+        if (mongoUser) {
+          user = {
+            id: String(mongoUser._id),
+            name: mongoUser.name,
+            email: mongoUser.email,
+            phone: mongoUser.phone,
+            pin: mongoUser.pin,
+            password: mongoUser.password,
+            avatar: mongoUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+            designation: mongoUser.designation || 'IAS Officer • Special Duty',
+            department: mongoUser.department || 'Cabinet Secretariat • Government of India',
+            officerId: mongoUser.officerId || ('GOI-DL-2026-' + String(mongoUser._id).slice(-4))
+          };
+        }
+      } catch (e) {
+        console.warn('[AUTH] MongoDB fingerprint lookup warning:', e.message);
       }
-    } catch (e) {
-      console.warn('[AUTH] MongoDB user lookup warning:', e.message);
+    }
+
+    if (!user && dataStore.getUserByFingerprint) {
+      user = dataStore.getUserByFingerprint(fingerprint);
     }
   }
 
-  // 2. Fallback: Search in dataStore
-  if (!user) {
-    user = dataStore.getUserByPhone(ident) || dataStore.getUserByEmail(ident);
+  // 2. Legacy fallback for phone/email + pin lookup if not found by fingerprint alone
+  if (!user && candidateIdent) {
+    const ident = candidateIdent;
+    const cleanPhone = ident.replace(/\D/g, '').slice(-10);
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const mongoUser = await User.findOne({
+          $or: [
+            { phone: ident },
+            ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : []),
+            { email: ident.toLowerCase() }
+          ]
+        });
+
+        if (mongoUser) {
+          user = {
+            id: String(mongoUser._id),
+            name: mongoUser.name,
+            email: mongoUser.email,
+            phone: mongoUser.phone,
+            pin: mongoUser.pin,
+            password: mongoUser.password,
+            avatar: mongoUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+            designation: mongoUser.designation || 'IAS Officer • Special Duty',
+            department: mongoUser.department || 'Cabinet Secretariat • Government of India',
+            officerId: mongoUser.officerId || ('GOI-DL-2026-' + String(mongoUser._id).slice(-4))
+          };
+        }
+      } catch (e) {
+        console.warn('[AUTH] MongoDB user lookup fallback warning:', e.message);
+      }
+    }
+
+    if (!user) {
+      user = dataStore.getUserByPhone(ident) || dataStore.getUserByEmail(ident);
+    }
   }
 
   if (!user) {
-    const error = new Error('No registered officer found with this mobile number/email. Please register first.');
+    const error = new Error('Invalid password.');
     error.statusCode = 401;
     throw error;
   }
 
   // Verify PIN / Password
   let isMatch = false;
-  if (user.pin && user.pin === pin) {
+  if (user.pin && user.pin === candidatePassword) {
     isMatch = true;
   } else if (user.password) {
-    isMatch = await bcrypt.compare(pin, user.password);
+    isMatch = await bcrypt.compare(candidatePassword, user.password);
   }
 
   if (!isMatch) {
-    const error = new Error('Incorrect 6-digit PIN entered');
+    const error = new Error('Invalid password.');
     error.statusCode = 401;
     throw error;
   }
@@ -399,6 +503,12 @@ const qrLogin = async (qrPayload) => {
       });
 
       if (mongoUser) {
+        if (mongoUser.qrRevoked) {
+          const error = new Error('This QR code has been revoked. Please request a new QR from the admin desk.');
+          error.statusCode = 401;
+          throw error;
+        }
+
         user = {
           id: String(mongoUser._id),
           name: mongoUser.name,
@@ -407,10 +517,15 @@ const qrLogin = async (qrPayload) => {
           avatar: mongoUser.avatar,
           designation: mongoUser.designation,
           department: mongoUser.department,
-          officerId: mongoUser.officerId
+          officerId: mongoUser.officerId,
+          lifetimeQrPayload: mongoUser.lifetimeQrPayload,
+          lifetimeQrDataUrl: mongoUser.lifetimeQrDataUrl,
+          lifetimeQrImage: mongoUser.lifetimeQrImage,
+          qrRevoked: mongoUser.qrRevoked || false
         };
       }
     } catch (e) {
+      if (e.statusCode) throw e;
       console.warn('[AUTH] MongoDB QR lookup warning:', e.message);
     }
   }
@@ -505,6 +620,10 @@ const getUserById = async (id) => {
           department: user.department,
           officerId: user.officerId || ('GOI-DL-2026-' + String(user._id).slice(-4)),
           role: user.role || 'user',
+          lifetimeQrPayload: user.lifetimeQrPayload || '',
+          lifetimeQrDataUrl: user.lifetimeQrDataUrl || '',
+          lifetimeQrImage: user.lifetimeQrImage || '',
+          qrRevoked: user.qrRevoked || false,
           createdAt: user.createdAt
         };
       }
@@ -583,6 +702,92 @@ const deleteUser = async (id) => {
   return deleted || jsonDeleted;
 };
 
+const revokeUserQr = async (userId) => {
+  if (!userId) return false;
+  qrService.revokeQr(userId);
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(userId);
+      await User.findOneAndUpdate(
+        {
+          $or: [
+            ...(isObjectId ? [{ _id: userId }] : []),
+            { officerId: userId },
+            { phone: userId }
+          ]
+        },
+        {
+          $set: {
+            qrRevoked: true,
+            qrRevokedAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[AUTH] MongoDB revokeUserQr warning:', e.message);
+    }
+  }
+  return true;
+};
+
+const regenerateUserQr = async (userId) => {
+  const user = await getUserById(userId);
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const qrInfo = await qrService.regenerateQr(user);
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(userId);
+      await User.findOneAndUpdate(
+        {
+          $or: [
+            ...(isObjectId ? [{ _id: userId }] : []),
+            { officerId: userId }
+          ]
+        },
+        {
+          $set: {
+            lifetimeQrId: qrInfo.qrId,
+            lifetimeQrPayload: qrInfo.qrPayload,
+            lifetimeQrDataUrl: qrInfo.qrDataUrl,
+            lifetimeQrImage: qrInfo.qrImage,
+            lifetimeQrTokenHash: qrInfo.tokenHash,
+            qrRevoked: false,
+            qrRevokedAt: null
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[AUTH] MongoDB regenerateUserQr warning:', e.message);
+    }
+  }
+
+  // Dispatch new QR to officer's registered mobile via WhatsApp if phone exists
+  if (user.phone) {
+    try {
+      await whatsappService.sendQrMessage({
+        to: user.phone,
+        userName: user.name,
+        qrImage: qrInfo.qrImage,
+        qrDataUrl: qrInfo.qrDataUrl,
+        qrPayload: qrInfo.qrPayload,
+        expiresAt: null,
+        qrId: qrInfo.qrId
+      });
+    } catch (err) {
+      console.error('[AUTH] WhatsApp dispatch warning for regenerated QR:', err.message);
+    }
+  }
+
+  return qrInfo;
+};
+
 module.exports = {
   registerAdmin,
   loginAdmin,
@@ -592,5 +797,7 @@ module.exports = {
   getAllUsers,
   getUserById,
   updateUser,
-  deleteUser
+  deleteUser,
+  revokeUserQr,
+  regenerateUserQr
 };
