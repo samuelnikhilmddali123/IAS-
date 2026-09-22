@@ -49,6 +49,18 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Static files for Admin Dashboard and Uploads (Dishes & QR images)
+app.get('/admin/styles.css', (req, res) => {
+  res.type('text/css');
+  res.sendFile(path.join(__dirname, 'public/admin/styles.css'));
+});
+app.get('/admin/bundle.css', (req, res) => {
+  res.type('text/css');
+  res.sendFile(path.join(__dirname, 'public/admin/bundle.css'));
+});
+app.get('/admin/bundle.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'public/admin/bundle.js'));
+});
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -132,8 +144,8 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 }));
 
 // Admin React SPA direct entry and wildcard routing for all dedicated pages
-// (/admin/dashboard, /admin/food-menu, /admin/orders, /admin/whatsapp, /admin/officers)
-app.get(/^\/admin(\/.*)?$/, (req, res) => {
+// (/admin/dashboard, /admin/food-menu, /admin/orders, /admin/whatsapp, /admin/officers, /admin/reports)
+app.get(/^\/admin(?:\/(?!.*\.[a-zA-Z0-9]+$).*)?$/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public/admin/index.html'));
 });
 

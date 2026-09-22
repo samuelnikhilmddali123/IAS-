@@ -1,18 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Canteen Services Admin Portal | Government of India</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/admin/styles.css?v=1790078263617">
-  <link rel="stylesheet" href="./styles.css?v=1790078263617">
-  <link rel="stylesheet" href="/admin/bundle.css?v=1790078263617">
-  <link rel="stylesheet" href="./bundle.css?v=1790078263617">
-  <style id="canteen-admin-inlined-styles">
+const fs = require('fs');
+const path = require('path');
 
+const comprehensiveCss = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
 
 :root {
@@ -2843,13 +2832,42 @@ body {
     grid-column: span 1;
   }
 }
+`;
 
+const adminCssPath = path.join(__dirname, '..', 'admin-src', 'styles', 'admin.css');
+const publicCssPath = path.join(__dirname, '..', 'public', 'admin', 'styles.css');
+const publicHtmlPath = path.join(__dirname, '..', 'public', 'admin', 'index.html');
+
+fs.writeFileSync(adminCssPath, comprehensiveCss, 'utf8');
+fs.writeFileSync(publicCssPath, comprehensiveCss, 'utf8');
+
+const buildTimestamp = Date.now();
+
+const inlinedHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canteen Services Admin Portal | Government of India</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/styles.css?v=${buildTimestamp}">
+  <link rel="stylesheet" href="./styles.css?v=${buildTimestamp}">
+  <link rel="stylesheet" href="/admin/bundle.css?v=${buildTimestamp}">
+  <link rel="stylesheet" href="./bundle.css?v=${buildTimestamp}">
+  <style id="canteen-admin-inlined-styles">
+${comprehensiveCss}
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/admin/bundle.js?v=1790078263617"></script>
-  <script src="./bundle.js?v=1790078263617"></script>
+  <script src="/admin/bundle.js?v=${buildTimestamp}"></script>
+  <script src="./bundle.js?v=${buildTimestamp}"></script>
 </body>
 </html>
+`;
+
+fs.writeFileSync(publicHtmlPath, inlinedHtml, 'utf8');
+console.log('Successfully wrote unified master styles and updated index.html! Length:', comprehensiveCss.length);

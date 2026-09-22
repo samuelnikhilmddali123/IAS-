@@ -9,6 +9,8 @@ import { FoodMenuPage } from './pages/FoodMenuPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { WhatsAppPage } from './pages/WhatsAppPage';
 import { OfficersPage } from './pages/OfficersPage';
+import { ReportsPage } from './pages/ReportsPage';
+import './styles/admin.css';
 
 export const App = () => {
   const [foods, setFoods] = useState([]);
@@ -24,6 +26,12 @@ export const App = () => {
   const [toast, setToast] = useState({ message: '', show: false });
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [whatsappCount, setWhatsappCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Modals for System items
+  const [activeModal, setActiveModal] = useState(null); // 'settings' | 'help' | null
 
   const showToast = useCallback((message) => {
     setToast({ message, show: true });
@@ -33,6 +41,7 @@ export const App = () => {
   }, []);
 
   const refreshAllData = useCallback(async () => {
+    setRefreshing(true);
     try {
       const [statsRes, foodsRes, ordersRes, usersRes, waRes] = await Promise.all([
         fetch('/api/orders/admin/stats').then((r) => r.json()).catch(() => ({})),
@@ -41,6 +50,8 @@ export const App = () => {
         fetch('/api/auth/users').then((r) => r.json()).catch(() => ({})),
         fetch('/api/whatsapp/outbox').then((r) => r.json()).catch(() => ({})),
       ]);
+
+      setIsOnline(true);
 
       if (statsRes.success && statsRes.stats) {
         setStats(statsRes.stats);
@@ -59,6 +70,9 @@ export const App = () => {
       }
     } catch (err) {
       console.error('Data refresh error:', err);
+      setIsOnline(false);
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
@@ -71,7 +85,11 @@ export const App = () => {
       try {
         socket = window.io();
         socket.on('connect', () => {
+          setIsOnline(true);
           console.log('[Socket.IO] Connected to Canteen live feed');
+        });
+        socket.on('disconnect', () => {
+          setIsOnline(false);
         });
         socket.on('newKOT', (kot) => {
           showToast(`🔔 NEW KOT: Order #${kot?.orderNumber || ''} received in Kitchen!`);
@@ -90,7 +108,7 @@ export const App = () => {
     }
 
     // Polling fallback
-    const interval = setInterval(refreshAllData, 12000);
+    const interval = setInterval(refreshAllData, 15000);
     return () => {
       clearInterval(interval);
       if (socket) socket.disconnect();
@@ -199,17 +217,28 @@ export const App = () => {
   }).length;
 
   return (
-    <div className="admin-app">
-      <Header onRefresh={refreshAllData} />
+    <div className="admin-app-layout">
+      {/* Left Sidebar (full height) */}
+      <Sidebar
+        counts={{
+          foods: foods.length,
+          activeOrders: activeOrdersCount,
+          officers: officers.length,
+          whatsapp: whatsappCount,
+        }}
+        onOpenSettings={() => setActiveModal('settings')}
+        onOpenHelp={() => setActiveModal('help')}
+      />
 
-      <div className="app-body">
-        <Sidebar
-          counts={{
-            foods: foods.length,
-            activeOrders: activeOrdersCount,
-            officers: officers.length,
-            whatsapp: whatsappCount,
-          }}
+      {/* Main App Container */}
+      <div className="main-viewport">
+        <Header
+          isOnline={isOnline}
+          onRefresh={refreshAllData}
+          refreshing={refreshing}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          notificationCount={3}
         />
 
         <main className="content-area">
@@ -223,8 +252,11 @@ export const App = () => {
                   orders={orders}
                   foods={foods}
                   officers={officers}
+                  whatsappCount={whatsappCount}
                   onOpenAddFood={() => setIsAddModalOpen(true)}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
+                  onOpenSettings={() => setActiveModal('settings')}
+                  searchQuery={searchQuery}
                 />
               }
             />
@@ -263,6 +295,17 @@ export const App = () => {
                 />
               }
             />
+            <Route
+              path="/reports"
+              element={
+                <ReportsPage
+                  stats={stats}
+                  orders={orders}
+                  foods={foods}
+                  officers={officers}
+                />
+              }
+            />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
@@ -275,6 +318,73 @@ export const App = () => {
         onClose={() => setIsAddModalOpen(false)}
         onAddFood={handleAddFood}
       />
+
+      {/* Settings Modal */}
+      {activeModal === 'settings' && (
+        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>⚙️ System Settings</h3>
+              <button className="close-btn" onClick={() => setActiveModal(null)}>×</button>
+            </div>
+            <div style={{ padding: '10px 0', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group">
+                <label>Canteen Operating Node</label>
+                <input type="text" className="form-control" readOnly value="Central Secretariat Kitchen Desk - Node #1" />
+              </div>
+              <div className="form-group">
+                <label>Kitchen Order Ticket (KOT) Auto-Print</label>
+                <select className="form-control">
+                  <option>Enabled (Instant thermal kitchen ticket)</option>
+                  <option>Manual confirmation required</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Operating Hours</label>
+                <input type="text" className="form-control" defaultValue="07:30 AM - 10:30 PM (All 7 Days)" />
+              </div>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ marginTop: '10px' }}
+                onClick={() => {
+                  showToast('Settings saved successfully');
+                  setActiveModal(null);
+                }}
+              >
+                Save Preferences
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help Modal */}
+      {activeModal === 'help' && (
+        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>ℹ️ Help & Support Desk</h3>
+              <button className="close-btn" onClick={() => setActiveModal(null)}>×</button>
+            </div>
+            <div style={{ padding: '10px 0', fontSize: '13.5px', color: '#334155', lineHeight: '1.6' }}>
+              <p style={{ marginBottom: '12px' }}>
+                Welcome to the <strong>Canteen Services Executive Operations Desk</strong> for Government of India officers.
+              </p>
+              <ul style={{ paddingLeft: '20px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <li><strong>Food Menu:</strong> Add, edit pricing, or toggle availability for breakfast, lunch, and dinner.</li>
+                <li><strong>Live Orders:</strong> Real-time KOT tracking with preparation states and token IDs.</li>
+                <li><strong>WhatsApp & QR:</strong> Pair WhatsApp gateway for dispatching lifetime digital QR menus to officers.</li>
+                <li><strong>Registered Officers:</strong> Manage IAS officers and verified mobile numbers.</li>
+                <li><strong>Reports & Analytics:</strong> Review revenue, daily order volumes, popular items, and officer usage.</li>
+              </ul>
+              <div style={{ background: '#ecfdf5', padding: '12px', borderRadius: '8px', border: '1px solid #a7f3d0', color: '#065f46', fontSize: '12.5px' }}>
+                Technical Helpdesk: ext 4402 / support@canteen.gov.in
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

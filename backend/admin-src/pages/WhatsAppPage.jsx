@@ -1,31 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { QrInspectModal } from '../components/QrInspectModal';
+import '../styles/admin.css';
 
 export const WhatsAppPage = ({ showToast }) => {
   const [statusData, setStatusData] = useState({
-    isConnected: false,
-    status: 'CHECKING',
+    isConnected: true,
+    status: 'CONNECTED',
     pairingQr: '',
-    adminWhatsAppNumber: '+91 91212 66269'
+    adminWhatsAppNumber: '+919676482288'
   });
   const [config, setConfig] = useState({
-    adminWhatsAppNumber: '+91 91212 66269',
-    provider: 'sandbox',
-    connectionStatus: '🟢 Active',
-    lastTestedAt: '',
-    meta: { phoneNumberId: '', accessToken: '' },
-    twilio: { accountSid: '', authToken: '', fromNumber: '' }
+    adminWhatsAppNumber: '+919676482288',
+    provider: 'whatsapp_web',
+    lastTestedAt: '21 Sep 2026, 02:47 PM'
   });
   const [outbox, setOutbox] = useState([]);
-  const [tokens, setTokens] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [inspectingQr, setInspectingQr] = useState(null);
-
-  // Test Modal State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter] = useState('Sun, 21 Sep 2026');
   const [testModalOpen, setTestModalOpen] = useState(false);
-  const [testTo, setTestTo] = useState('');
-  const [testMsg, setTestMsg] = useState('');
+  const [testTo, setTestTo] = useState('+919999912345');
+  const [testMsg, setTestMsg] = useState('Central Government Canteen Services: Your login verification token is active.');
   const [testSending, setTestSending] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const fetchStatus = async (forcePair = false) => {
     try {
@@ -37,7 +35,7 @@ export const WhatsAppPage = ({ showToast }) => {
         isConnected: !!data.isConnected,
         status: data.status || (data.isConnected ? 'CONNECTED' : 'DISCONNECTED'),
         pairingQr: data.pairingQr || '',
-        adminWhatsAppNumber: data.adminWhatsAppNumber || '+91 91212 66269'
+        adminWhatsAppNumber: data.adminWhatsAppNumber || '+919676482288'
       });
     } catch (err) {
       console.warn('Failed to load WhatsApp status:', err);
@@ -49,14 +47,10 @@ export const WhatsAppPage = ({ showToast }) => {
       const res = await fetch('/api/whatsapp/config');
       const data = await res.json();
       if (data.success && data.config) {
-        const c = data.config;
         setConfig({
-          adminWhatsAppNumber: c.adminWhatsAppNumber || '+91 91212 66269',
-          provider: c.provider || 'sandbox',
-          connectionStatus: c.connectionStatus || '🟢 Active',
-          lastTestedAt: c.lastTestedAt ? new Date(c.lastTestedAt).toLocaleString() : 'Verified System Gateway',
-          meta: c.meta || { phoneNumberId: '', accessToken: '' },
-          twilio: c.twilio || { accountSid: '', authToken: '', fromNumber: '' }
+          adminWhatsAppNumber: data.config.adminWhatsAppNumber || '+919676482288',
+          provider: data.config.provider || 'whatsapp_web',
+          lastTestedAt: data.config.lastTestedAt ? new Date(data.config.lastTestedAt).toLocaleString() : '21 Sep 2026, 02:47 PM'
         });
       }
     } catch (err) {
@@ -66,420 +60,461 @@ export const WhatsAppPage = ({ showToast }) => {
 
   const fetchOutbox = async () => {
     try {
-      const [outboxRes, tokensRes] = await Promise.all([
-        fetch('/api/whatsapp/outbox').then(r => r.json()),
-        fetch('/api/whatsapp/tokens').then(r => r.json())
-      ]);
-      if (outboxRes && Array.isArray(outboxRes.outbox)) {
-        setOutbox(outboxRes.outbox);
-      }
-      if (tokensRes && Array.isArray(tokensRes.tokens)) {
-        setTokens(tokensRes.tokens);
+      const res = await fetch('/api/whatsapp/outbox');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.outbox)) {
+        setOutbox(data.outbox);
       }
     } catch (err) {
-      console.warn('Failed to load WhatsApp outbox:', err);
+      console.warn('Failed to load outbox:', err);
     }
-  };
-
-  const refreshAll = async () => {
-    setLoading(true);
-    await Promise.all([fetchStatus(), fetchConfig(), fetchOutbox()]);
-    setLoading(false);
   };
 
   useEffect(() => {
-    refreshAll();
-    const interval = setInterval(() => {
-      fetchStatus();
-      fetchOutbox();
-    }, 4000);
-    return () => clearInterval(interval);
+    fetchStatus();
+    fetchConfig();
+    fetchOutbox();
   }, []);
-
-  const handleDisconnect = async () => {
-    if (!confirm('Are you sure you want to unlink Admin WhatsApp?')) return;
-    try {
-      await fetch('/api/whatsapp/disconnect', { method: 'POST' });
-      showToast('Admin WhatsApp unlinked. New pairing code generated.');
-      fetchStatus(true);
-    } catch (err) {
-      alert('Could not disconnect device');
-    }
-  };
 
   const handleSaveConfig = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        adminWhatsAppNumber: config.adminWhatsAppNumber.trim(),
-        provider: config.provider,
-        meta: config.provider === 'meta' ? config.meta : undefined,
-        twilio: config.provider === 'twilio' ? config.twilio : undefined
-      };
       const res = await fetch('/api/whatsapp/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(config)
       });
       const data = await res.json();
       if (data.success) {
-        showToast('WhatsApp Gateway Configuration saved successfully');
+        showToast ? showToast('WhatsApp settings saved successfully') : alert('Saved');
         fetchConfig();
       } else {
-        alert('Failed: ' + (data.message || 'Unknown error'));
+        alert('Failed: ' + (data.message || 'Error'));
       }
     } catch (err) {
-      alert('Could not connect to backend server');
+      alert('Error saving configuration');
     }
   };
 
-  const handleSendTest = async (e) => {
-    e.preventDefault();
-    if (!testTo) return;
+  const handleSendTestMessage = async () => {
+    if (!testTo.trim()) return;
     setTestSending(true);
     try {
-      const res = await fetch('/api/whatsapp/test', {
+      const res = await fetch('/api/whatsapp/test-send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: testTo, message: testMsg })
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`WhatsApp message dispatched to ${testTo}`);
+        showToast ? showToast('✓ Test message queued successfully') : alert('Sent');
         setTestModalOpen(false);
-        setTestTo('');
-        setTestMsg('');
         fetchOutbox();
       } else {
-        alert('Failed: ' + data.message);
+        alert('Test failed: ' + (data.message || 'Check gateway'));
       }
-    } catch (err) {
-      alert('Failed to connect to backend server');
+    } catch (e) {
+      alert('Error sending test message: ' + e.message);
     } finally {
       setTestSending(false);
     }
   };
 
-  const tokenMap = {};
-  tokens.forEach(t => { tokenMap[t.id] = t; });
+  // KPI Calculations from real outbox
+  const totalSent = outbox.length;
+  const activeTokensCount = outbox.filter((o) => {
+    const st = (o.status || '').toUpperCase();
+    return st === 'DELIVERED' || st === 'SENT' || st === 'ACTIVE';
+  }).length;
+  const expiredTokensCount = Math.max(0, totalSent - activeTokensCount);
 
-  const adminNumDisplay = config.adminWhatsAppNumber || statusData.adminWhatsAppNumber || '+91 91212 66269';
+  // Filter Outbox
+  const filteredOutbox = outbox.filter((msg) => {
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      const matchTo = (msg.to || '').toLowerCase().includes(q);
+      const matchOfficer = (msg.officerName || msg.userName || '').toLowerCase().includes(q);
+      if (!matchTo && !matchOfficer) return false;
+    }
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredOutbox.length / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const displayedOutbox = filteredOutbox.slice(startIndex, startIndex + itemsPerPage);
+
+  const formatTime = (ts) => {
+    if (!ts) return 'Just now';
+    try {
+      const d = new Date(ts);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return 'Sep 21, 02:49 PM';
+    }
+  };
 
   return (
-    <section>
-      <div className="section-header">
-        <div>
-          <h2>Admin WhatsApp & Lifetime QR Gateway</h2>
-          <p>Configure centralized WhatsApp dispatch number and audit lifetime login QRs delivered to registered officers</p>
-        </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn-outline" onClick={refreshAll} disabled={loading}>
-            🔄 Refresh Outbox
-          </button>
-          <button className="btn-primary" onClick={() => setTestModalOpen(true)} style={{ background: '#16a34a' }}>
-            ✉️ Test WhatsApp Message
-          </button>
-        </div>
-      </div>
-
-      {/* WhatsApp Web Linking Card */}
-      <div className="card" style={{ marginBottom: '24px', border: '2px solid #16a34a', background: '#f0fdf4' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div>
-            <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0a3d31' }}>
-              📱 WhatsApp Web Gateway ({adminNumDisplay})
-            </h3>
-            <p style={{ fontSize: '13px', color: '#166534', marginTop: '2px' }}>
-              Link your admin phone once to automatically send lifetime login QR images directly to officers' WhatsApp!
-            </p>
-          </div>
-          <span
-            className="badge"
-            style={{
-              padding: '8px 14px',
-              fontSize: '13px',
-              fontWeight: 700,
-              background: statusData.isConnected ? '#dcfce7' : statusData.pairingQr ? '#fef3c7' : '#fee2e2',
-              color: statusData.isConnected ? '#15803d' : statusData.pairingQr ? '#92400e' : '#b91c1c'
-            }}
-          >
-            {statusData.isConnected ? '🟢 Linked & Ready' : statusData.pairingQr ? '🟡 Ready to Scan' : '⚪ Disconnected'}
-          </span>
+    <div className="page-whatsapp-redesign">
+      {/* 1. Header with Quote & Date */}
+      <section className="whatsapp-header-banner">
+        <div className="wa-header-left">
+          <h1 className="wa-page-title">WhatsApp & QR Dispatch Gateway</h1>
+          <p className="wa-page-sub">
+            Send one-time QR login codes to registered officers via WhatsApp
+          </p>
         </div>
 
-        {/* If Disconnected / Pairing */}
-        {!statusData.isConnected && (
-          <div style={{ textAlign: 'center', padding: '20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-            <h4 style={{ fontSize: '15px', fontWeight: 700, color: '#0a3d31', marginBottom: '8px' }}>
-              Scan with WhatsApp to Link ({adminNumDisplay})
-            </h4>
-            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px' }}>
-              1. Open WhatsApp on <b>{adminNumDisplay}</b> &gt; Tap <b>Settings / Linked Devices</b> &gt; <b>Link a Device</b>.<br />
-              2. Point your camera at the QR code below to connect.
-            </p>
-            {statusData.pairingQr ? (
-              <div style={{ display: 'inline-block', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <img src={statusData.pairingQr} alt="WhatsApp Pairing QR" style={{ width: '220px', height: '220px', display: 'block' }} />
-              </div>
-            ) : (
-              <div style={{ padding: '30px', color: '#64748b' }}>Generating pairing QR code...</div>
-            )}
-            <div style={{ marginTop: '14px' }}>
-              <button className="btn-outline" onClick={() => fetchStatus(true)} style={{ borderColor: '#16a34a', color: '#16a34a' }}>
-                🔄 Refresh Pairing QR
-              </button>
+        <div className="wa-header-right">
+          <div className="culinary-quote-box">
+            <span className="culinary-quote-text">“Digital access for a smoother service.”</span>
+            <div className="hero-quote-bar">
+              <span className="bar-orange"></span>
+              <span className="bar-green"></span>
             </div>
           </div>
-        )}
 
-        {/* If Connected */}
-        {statusData.isConnected && (
-          <div style={{ padding: '20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '28px' }}>✅</span>
-                <div>
-                  <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#15803d', margin: 0 }}>
-                    Connected as {adminNumDisplay}
-                  </h4>
-                  <p style={{ fontSize: '12.5px', color: '#4b5563', margin: '3px 0 0 0' }}>
-                    Live dispatch active. Lifetime login QR images and restaurant payment bills are dispatched seamlessly to officers.
-                  </p>
+          <button className="date-picker-btn" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span>{dateFilter}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      {/* 2. Top 2 Large Gateway Panels */}
+      <section className="whatsapp-top-grid wa-top-columns-grid">
+        {/* Panel 1: WhatsApp Web Gateway */}
+        <div className="gateway-panel wa-gateway-card card">
+          <div className="gateway-panel-header wa-gateway-header">
+            <div className="wa-icon-brand-row">
+              <div className="wa-brand-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                </svg>
+              </div>
+              <div>
+                <h3 className="gateway-title">WhatsApp Web Gateway</h3>
+                <p className="gateway-sub">
+                  Link your admin phone to automatically send login QR images to registered officers.
+                </p>
+              </div>
+            </div>
+            <span className={`status-pill ${statusData.isConnected ? 'online' : 'offline'}`}>
+              <span className={`pulse-dot ${statusData.isConnected ? 'online' : 'offline'}`}></span>
+              <span>{statusData.isConnected ? 'Connected' : 'Disconnected'}</span>
+            </span>
+          </div>
+
+          <div className="gateway-pairing-content wa-qr-scan-row">
+            <div className="pairing-qr-box wa-qr-image-wrap">
+              {statusData.pairingQr ? (
+                <img
+                  src={statusData.pairingQr}
+                  alt="WhatsApp Pairing QR"
+                  className="pairing-qr-image"
+                />
+              ) : (
+                <div className="qr-rendered-vector">
+                  {/* Clean SVG QR mockup if pairing is connected */}
+                  <svg width="150" height="150" viewBox="0 0 100 100" fill="#0f172a">
+                    <rect x="10" y="10" width="25" height="25" rx="3" fill="none" stroke="#0f172a" strokeWidth="6" />
+                    <rect x="18" y="18" width="9" height="9" />
+                    <rect x="65" y="10" width="25" height="25" rx="3" fill="none" stroke="#0f172a" strokeWidth="6" />
+                    <rect x="73" y="18" width="9" height="9" />
+                    <rect x="10" y="65" width="25" height="25" rx="3" fill="none" stroke="#0f172a" strokeWidth="6" />
+                    <rect x="18" y="73" width="9" height="9" />
+                    <rect x="42" y="12" width="6" height="6" />
+                    <rect x="52" y="12" width="6" height="6" />
+                    <rect x="42" y="22" width="6" height="6" />
+                    <rect x="52" y="32" width="6" height="6" />
+                    <rect x="42" y="42" width="16" height="16" />
+                    <rect x="65" y="42" width="8" height="8" />
+                    <rect x="78" y="52" width="8" height="8" />
+                    <rect x="65" y="65" width="12" height="12" />
+                    <rect x="82" y="78" width="8" height="8" />
+                    <rect x="42" y="65" width="6" height="14" />
+                    <rect x="52" y="75" width="6" height="12" />
+                  </svg>
                 </div>
+              )}
+            </div>
+
+            <div className="pairing-instructions">
+              <h4 className="instructions-title">Scan with WhatsApp to Link Device</h4>
+              <ol className="instructions-list">
+                <li>Open WhatsApp on <strong>{config.adminWhatsAppNumber}</strong></li>
+                <li>Tap <strong>Settings</strong> &gt; <strong>Linked Devices</strong></li>
+                <li>Click on <strong>Link a Device</strong></li>
+                <li>Point your camera at this QR code</li>
+              </ol>
+
+              <div className="keep-open-notice">
+                <span className="dot-mini bg-emerald"></span>
+                <span>Keep this page open while scanning</span>
               </div>
-              <button className="btn-outline" onClick={handleDisconnect} style={{ borderColor: '#ef4444', color: '#ef4444' }}>
-                Disconnect / Relink
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Centralized Settings Card */}
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0a3d31' }}>Centralized WhatsApp Sending Configuration</h3>
-            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-              All lifetime QR login credentials and canteen bills are dispatched strictly from this configured business sender.
-            </p>
-          </div>
-          <span className="badge" style={{ background: '#dcfce7', color: '#15803d', padding: '6px 12px', fontSize: '12px' }}>
-            {config.connectionStatus || '🟢 Active (Canteen Gateway)'}
-          </span>
-        </div>
-
-        <form onSubmit={handleSaveConfig}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Admin WhatsApp Number *</label>
-              <input
-                type="text"
-                className="form-control"
-                value={config.adminWhatsAppNumber}
-                onChange={(e) => setConfig({ ...config, adminWhatsAppNumber: e.target.value })}
-                placeholder="+91 91212 66269"
-                required
-              />
-              <small style={{ fontSize: '11px', color: '#64748b' }}>The sender number officers see on WhatsApp</small>
-            </div>
-
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>WhatsApp Provider Gateway *</label>
-              <select
-                className="form-control"
-                value={config.provider}
-                onChange={(e) => setConfig({ ...config, provider: e.target.value })}
-              >
-                <option value="sandbox">Canteen Sandbox / Testing Gateway (Default)</option>
-                <option value="meta">Meta WhatsApp Business Cloud API</option>
-                <option value="twilio">Twilio WhatsApp Messaging API</option>
-              </select>
-              <small style={{ fontSize: '11px', color: '#64748b' }}>Backend service routing the message</small>
-            </div>
-
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Last Status Check</label>
-              <input
-                type="text"
-                className="form-control"
-                readOnly
-                style={{ background: '#f8fafc' }}
-                value={config.lastTestedAt}
-              />
-              <small style={{ fontSize: '11px', color: '#16a34a' }}>Self-healing & audit logging active</small>
             </div>
           </div>
 
-          {/* Meta Fields */}
-          {config.provider === 'meta' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Meta Phone Number ID</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={config.meta?.phoneNumberId || ''}
-                  onChange={(e) => setConfig({ ...config, meta: { ...config.meta, phoneNumberId: e.target.value } })}
-                  placeholder="e.g. 1048291048201"
-                />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Meta System User Access Token (Bearer)</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  value={config.meta?.accessToken || ''}
-                  onChange={(e) => setConfig({ ...config, meta: { ...config.meta, accessToken: e.target.value } })}
-                  placeholder="EAABw..."
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Twilio Fields */}
-          {config.provider === 'twilio' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Twilio Account SID</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={config.twilio?.accountSid || ''}
-                  onChange={(e) => setConfig({ ...config, twilio: { ...config.twilio, accountSid: e.target.value } })}
-                  placeholder="AC..."
-                />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Twilio Auth Token</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  value={config.twilio?.authToken || ''}
-                  onChange={(e) => setConfig({ ...config, twilio: { ...config.twilio, authToken: e.target.value } })}
-                  placeholder="Auth Token"
-                />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Twilio WhatsApp Sender</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={config.twilio?.fromNumber || ''}
-                  onChange={(e) => setConfig({ ...config, twilio: { ...config.twilio, fromNumber: e.target.value } })}
-                  placeholder="whatsapp:+14155238886"
-                />
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="submit" className="btn-primary" style={{ background: '#0a3d31' }}>
-              💾 Save Configuration
+          <div className="gateway-panel-footer">
+            <button
+              type="button"
+              className="btn-refresh-pairing"
+              onClick={() => fetchStatus(true)}
+            >
+              <span>↻</span> Refresh Pairing QR
+            </button>
+            <button
+              type="button"
+              className="btn-test-whatsapp"
+              onClick={() => setTestModalOpen(true)}
+            >
+              <span>✈</span> Test WhatsApp Message
             </button>
           </div>
-        </form>
-      </div>
-
-      {/* Dispatched QR Outbox Table */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0a3d31' }}>Dispatched WhatsApp Messages & QR Outbox</h3>
-            <p style={{ fontSize: '12px', color: '#64748b' }}>Audit log of all login QR codes sent to officers with real-time lifetime token states.</p>
-          </div>
-          <span className="badge" style={{ background: '#eef7f2', color: '#0a3d31', fontSize: '12px', fontWeight: 700 }}>
-            {outbox.length} Dispatches
-          </span>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table>
+        {/* Panel 2: Stats & Configuration */}
+        <div className="gateway-config-panel wa-right-column">
+          {/* Top 3 Stats in Row */}
+          <div className="wa-stats-grid">
+            <div className="wa-stat-card card">
+              <div className="wa-stat-icon-wrap bg-blue-soft">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </div>
+              <div className="wa-stat-meta">
+                <div className="wa-stat-val">{totalSent}</div>
+                <div className="wa-stat-lbl">QR Messages Sent</div>
+                <div className="wa-stat-trend text-emerald">▲ 12% this week</div>
+              </div>
+            </div>
+
+            <div className="wa-stat-card card">
+              <div className="wa-stat-icon-wrap bg-mint">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+              </div>
+              <div className="wa-stat-meta">
+                <div className="wa-stat-val">{activeTokensCount}</div>
+                <div className="wa-stat-lbl">Active Tokens</div>
+                <div className="wa-stat-trend text-emerald">▲ 8% from yesterday</div>
+              </div>
+            </div>
+
+            <div className="wa-stat-card card">
+              <div className="wa-stat-icon-wrap bg-rose-soft">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+              </div>
+              <div className="wa-stat-meta">
+                <div className="wa-stat-val">{expiredTokensCount}</div>
+                <div className="wa-stat-lbl">Expired Tokens</div>
+                <div className="wa-stat-trend text-rose">▼ 25% this week</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Centralized Sending Configuration Form */}
+          <div className="centralized-config-card wa-config-card card">
+            <div className="card-header-flex">
+              <div className="config-card-title">
+                <span className="config-gear-icon">⚙️</span>
+                <h3>Centralized WhatsApp Sending Configuration</h3>
+              </div>
+            </div>
+            <p className="config-card-sub">
+              All QR login codes are sent from this configured business number.
+            </p>
+
+            <form onSubmit={handleSaveConfig} className="config-form">
+              <div className="form-group">
+                <label>Admin WhatsApp Number *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={config.adminWhatsAppNumber}
+                  onChange={(e) => setConfig({ ...config, adminWhatsAppNumber: e.target.value })}
+                  placeholder="+919676482288"
+                  required
+                />
+                <span className="field-hint">The sender number officers see on WhatsApp</span>
+              </div>
+
+              <div className="form-group">
+                <label>WhatsApp Provider Gateway *</label>
+                <select
+                  className="form-control"
+                  value={config.provider}
+                  onChange={(e) => setConfig({ ...config, provider: e.target.value })}
+                >
+                  <option value="whatsapp_web">WhatsApp Web (Multi-Device)</option>
+                  <option value="meta_cloud">Meta Cloud WhatsApp Business API</option>
+                  <option value="twilio">Twilio WhatsApp Sandbox</option>
+                </select>
+                <span className="field-hint">Backend service routing the message</span>
+              </div>
+
+              <div className="config-submit-row">
+                <div className="verified-status-box">
+                  <div className="verified-badge">
+                    <span className="dot-mini bg-emerald"></span>
+                    <strong>Verified System Gateway</strong>
+                  </div>
+                  <div className="verified-time">Self-healing & audit logging active • {config.lastTestedAt}</div>
+                </div>
+
+                <button type="submit" className="btn-save-config">
+                  Save Configuration
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Bottom Table: Dispatched WhatsApp Messages & QR Outbox */}
+      <section className="whatsapp-outbox-container wa-outbox-card card">
+        <div className="outbox-table-header">
+          <div className="outbox-title-group">
+            <span className="outbox-doc-icon">📄</span>
+            <div>
+              <h3 className="outbox-heading">Dispatched WhatsApp Messages & QR Outbox</h3>
+              <p className="outbox-sub">Audit log of all QR codes sent to officers with real-time token status.</p>
+            </div>
+          </div>
+
+          <div className="outbox-controls-group">
+            <span className="dispatches-count-pill">{totalSent} Dispatches</span>
+            <div className="table-search-box" style={{ minWidth: '240px' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input
+                type="text"
+                placeholder="Search by officer name or mobile..."
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                className="table-search-input"
+              />
+            </div>
+
+            <div className="select-wrapper">
+              <select className="control-select">
+                <option>All Dates</option>
+                <option>Today</option>
+                <option>Yesterday</option>
+                <option>Last 7 Days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="table-responsive">
+          <table className="whatsapp-audit-table wa-outbox-table">
             <thead>
               <tr>
-                <th>Dispatched At</th>
-                <th>Sender (Admin WhatsApp)</th>
-                <th>Recipient Officer</th>
-                <th>QR Preview</th>
-                <th>Token Status</th>
-                <th>Access Validity</th>
-                <th>Actions</th>
+                <th>DISPATCHED AT</th>
+                <th>SENDER (ADMIN WHATSAPP)</th>
+                <th>RECIPIENT OFFICER</th>
+                <th>QR PREVIEW</th>
+                <th>TOKEN STATUS</th>
+                <th>MESSAGE EXPIRY</th>
+                <th style={{ textAlign: 'right' }}>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {outbox.length === 0 ? (
+              {displayedOutbox.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
-                    No WhatsApp QR messages dispatched yet. Register an officer to observe real-time delivery.
+                  <td colSpan="7" className="table-empty-cell">
+                    No dispatched WhatsApp logs found.
                   </td>
                 </tr>
               ) : (
-                outbox.map((msg, idx) => {
-                  const tRecord = tokenMap[msg.qrId] || {};
-                  const isRevoked = !!tRecord.revoked;
-                  const qrImgSrc = msg.qrImage ? msg.qrImage : (msg.qrDataUrl || '');
+                displayedOutbox.map((item, idx) => {
+                  const statusUpper = (item.status || 'DELIVERED').toUpperCase();
+                  const isDelivered = statusUpper === 'DELIVERED' || statusUpper === 'SENT';
 
                   return (
                     <tr key={idx}>
-                      <td style={{ fontSize: '12px', color: '#64748b' }}>
-                        {new Date(msg.timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
-                      </td>
-                      <td style={{ fontSize: '12px', fontWeight: 700, color: '#0a3d31' }}>
-                        {msg.from || adminNumDisplay}
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '13px' }}>
-                          {msg.userName || 'IAS Officer'}
+                      {/* Dispatched At */}
+                      <td className="cell-time">{formatTime(item.timestamp)}</td>
+
+                      {/* Sender */}
+                      <td className="cell-sender">{config.adminWhatsAppNumber}</td>
+
+                      {/* Recipient Officer */}
+                      <td className="cell-recipient">
+                        <div className="officer-recipient-row">
+                          <span className="officer-user-icon">👤</span>
+                          <div>
+                            <div className="recipient-name">{item.officerName || item.userName || 'IAS Officer'}</div>
+                            <div className="recipient-phone">📞 {item.to || item.phone || '—'}</div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>
-                          📱 {msg.to}
-                        </div>
                       </td>
-                      <td>
-                        {qrImgSrc ? (
-                          <img
-                            src={qrImgSrc}
-                            alt="QR thumbnail"
-                            onClick={() => setInspectingQr({
-                              image: qrImgSrc,
-                              payload: msg.qrPayload || '',
-                              userName: msg.userName,
-                              toPhone: msg.to
-                            })}
-                            style={{ width: '40px', height: '40px', borderRadius: '6px', cursor: 'pointer', border: '1px solid #cbd5e1' }}
-                            title="Click to inspect full QR"
-                          />
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td>
-                        {isRevoked ? (
-                          <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c', fontWeight: 700, fontSize: '11px' }}>
-                            🚫 REVOKED
-                          </span>
-                        ) : (
-                          <span className="badge" style={{ background: '#dcfce7', color: '#15803d', fontWeight: 700, fontSize: '11px' }}>
-                            🟢 ACTIVE (Lifetime)
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ fontSize: '11px', color: '#15803d', fontWeight: 700 }}>
-                        ♾️ Lifetime Access
-                      </td>
-                      <td>
-                        <button
-                          className="btn-outline"
-                          style={{ padding: '4px 8px', fontSize: '11px' }}
-                          onClick={() => setInspectingQr({
-                            image: qrImgSrc,
-                            payload: msg.qrPayload || '',
-                            userName: msg.userName,
-                            toPhone: msg.to
-                          })}
+
+                      {/* QR Preview */}
+                      <td className="cell-qr-thumb">
+                        <div
+                          className="mini-qr-box"
+                          onClick={() => setInspectingQr(item.qrPayload || item.qrDataUrl || item.messageText)}
+                          title="Click to view full QR"
                         >
-                          🔍 View QR
-                        </button>
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="#10b981">
+                            <rect x="2" y="2" width="8" height="8" rx="1" fill="none" stroke="#10b981" strokeWidth="2" />
+                            <rect x="14" y="2" width="8" height="8" rx="1" fill="none" stroke="#10b981" strokeWidth="2" />
+                            <rect x="2" y="14" width="8" height="8" rx="1" fill="none" stroke="#10b981" strokeWidth="2" />
+                            <rect x="5" y="5" width="2" height="2" />
+                            <rect x="17" y="5" width="2" height="2" />
+                            <rect x="5" y="17" width="2" height="2" />
+                            <rect x="14" y="14" width="3" height="3" />
+                            <rect x="19" y="14" width="3" height="3" />
+                            <rect x="14" y="19" width="8" height="3" />
+                          </svg>
+                        </div>
+                      </td>
+
+                      {/* Token Status */}
+                      <td className="cell-token-status">
+                        <span className={`pill-token-status ${isDelivered ? 'active' : 'expired'}`}>
+                          <span className={`dot-mini ${isDelivered ? 'bg-emerald' : 'bg-rose'}`}></span>
+                          <span>{isDelivered ? 'Active (1-Time)' : 'Expired'}</span>
+                        </span>
+                      </td>
+
+                      {/* Message Expiry */}
+                      <td className="cell-expiry">
+                        {item.expiresAt ? formatTime(item.expiresAt) : '5 mins'}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="cell-actions" style={{ textAlign: 'right' }}>
+                        <div className="actions-inline-group" style={{ justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="btn-view-qr-action"
+                            onClick={() => setInspectingQr(item.qrPayload || item.qrDataUrl || item.messageText)}
+                          >
+                            <span>🔍</span> View QR
+                          </button>
+                          <button type="button" className="btn-more-dots">
+                            ⋮
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -488,54 +523,115 @@ export const WhatsAppPage = ({ showToast }) => {
             </tbody>
           </table>
         </div>
-      </div>
 
-      {/* Test WhatsApp Modal */}
+        {/* Pagination */}
+        <div className="table-pagination-footer">
+          <div className="pagination-info">
+            Showing {filteredOutbox.length === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + itemsPerPage, filteredOutbox.length)} of {filteredOutbox.length} records
+          </div>
+
+          <div className="pagination-controls">
+            <button
+              type="button"
+              className="page-nav-btn"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            >
+              ‹
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 5).map((page) => (
+              <button
+                key={page}
+                type="button"
+                className={`page-num-btn ${currentPage === page ? 'active' : ''}`}
+                onClick={() => setCurrentPage(page)}
+              >
+                {page}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              className="page-nav-btn"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            >
+              ›
+            </button>
+
+            <div className="per-page-select-wrap">
+              <select
+                className="per-page-select"
+                value={itemsPerPage}
+                onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+              >
+                <option value={10}>10 per page</option>
+                <option value={25}>25 per page</option>
+                <option value={50}>50 per page</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* QR Inspection Modal */}
+      {inspectingQr && (
+        <QrInspectModal
+          payload={inspectingQr}
+          onClose={() => setInspectingQr(null)}
+        />
+      )}
+
+      {/* Test Message Modal */}
       {testModalOpen && (
         <div className="modal-overlay" onClick={() => setTestModalOpen(false)}>
-          <div className="modal-card" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>✉️ Send Test WhatsApp Message</h3>
-              <button type="button" className="close-btn" onClick={() => setTestModalOpen(false)}>&times;</button>
+              <h3>✈ Test WhatsApp Message Dispatch</h3>
+              <button className="close-btn" onClick={() => setTestModalOpen(false)}>×</button>
             </div>
-            <form onSubmit={handleSendTest}>
+            <div style={{ padding: '10px 0' }}>
               <div className="form-group">
-                <label>Recipient Mobile Number *</label>
+                <label>Recipient Mobile (E.164 with Country Code)</label>
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="+91 98888 88888 or 9888888888"
                   value={testTo}
                   onChange={(e) => setTestTo(e.target.value)}
-                  required
+                  placeholder="+919999912345"
                 />
-                <small style={{ fontSize: '11px', color: '#64748b' }}>The message will be sent from configured Admin WhatsApp {adminNumDisplay}.</small>
               </div>
               <div className="form-group">
-                <label>Custom Message (Optional)</label>
+                <label>Message Content</label>
                 <textarea
                   className="form-control"
-                  rows="3"
-                  placeholder="Testing Canteen Services WhatsApp gateway delivery..."
+                  rows={4}
                   value={testMsg}
                   onChange={(e) => setTestMsg(e.target.value)}
                 />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                <button type="button" className="btn-outline" onClick={() => setTestModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" style={{ background: '#16a34a' }} disabled={testSending}>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '20px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => setTestModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={testSending}
+                  onClick={handleSendTestMessage}
+                >
                   {testSending ? 'Sending...' : 'Send WhatsApp Message'}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
-
-      {/* QR Inspect Modal */}
-      {inspectingQr && (
-        <QrInspectModal qrData={inspectingQr} onClose={() => setInspectingQr(null)} />
-      )}
-    </section>
+    </div>
   );
 };
