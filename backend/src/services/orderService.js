@@ -38,7 +38,7 @@ function formatOrderDoc(doc) {
     orderNote: obj.orderNote || '',
     mealSlot: obj.mealSlot || 'General',
     status: obj.status || 'PREPARING',
-    kitchenStatus: obj.kitchenStatus || 'NEW',
+    kitchenStatus: obj.kitchenStatus || obj.status || 'PREPARING',
     tokenNumber: obj.tokenNumber || Math.floor(10 + Math.random() * 90),
     billNumber: obj.billNumber || null,
     createdAt: obj.createdAt
@@ -128,7 +128,8 @@ const createOrder = async (orderData) => {
     } : {}),
     orderNote: orderData.orderNote || '',
     mealSlot: orderData.mealSlot || 'General',
-    status: orderData.orderType === 'PRE_ORDER' ? 'PRE_ORDERED' : 'PREPARING',
+    status: 'PREPARING',
+    kitchenStatus: 'PREPARING',
     tokenNumber
   };
 
@@ -175,13 +176,13 @@ const createOrder = async (orderData) => {
         pickupTime: finalOrder.pickupTime || null,
         pickupDate: finalOrder.pickupDate || null,
         orderType: finalOrder.orderType || 'INSTANT',
-        kitchenStatus: finalOrder.kitchenStatus || 'NEW'
+        kitchenStatus: finalOrder.kitchenStatus || 'PREPARING'
       };
 
       io.emit('newKOT', kotPayload);
       io.of('/kitchen').emit('newKOT', kotPayload);
       io.emit('newOrder', finalOrder);
-      console.log(`[KOT] Dispatched live ticket for Order #${finalOrder.orderNumber} (Status: NEW)`);
+      console.log(`[KOT] Dispatched live ticket for Order #${finalOrder.orderNumber} (Status: PREPARING)`);
     }
   } catch (e) {
     console.warn('[KOT] Failed to emit newKOT event:', e.message);
@@ -298,9 +299,9 @@ const getAllOrdersForAdmin = async (filter = {}) => {
 };
 
 const VALID_TRANSITIONS = {
-  'NEW': ['ACCEPTED', 'CANCELLED'],
-  'PENDING': ['ACCEPTED', 'CANCELLED'],
-  'PRE_ORDERED': ['ACCEPTED', 'CANCELLED'],
+  'NEW': ['PREPARING', 'ACCEPTED', 'CANCELLED'],
+  'PENDING': ['PREPARING', 'ACCEPTED', 'CANCELLED'],
+  'PRE_ORDERED': ['PREPARING', 'ACCEPTED', 'CANCELLED'],
   'ACCEPTED': ['PREPARING', 'CANCELLED'],
   'PREPARING': ['READY', 'CANCELLED'],
   'READY': ['COMPLETED'],

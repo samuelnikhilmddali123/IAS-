@@ -4,7 +4,7 @@ export const OrdersPage = ({ orders, onUpdateOrderStatus }) => {
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const statusFilters = ['ALL', 'NEW', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'];
+  const statusFilters = ['ALL', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'];
 
   const filteredOrders = orders.filter((order) => {
     const s = (order.status || order.kitchenStatus || 'NEW').toUpperCase();
@@ -164,18 +164,7 @@ export const OrdersPage = ({ orders, onUpdateOrderStatus }) => {
 
                 {/* Footer Action Buttons */}
                 <div style={{ padding: '12px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {status === 'NEW' && (
-                    <button
-                      type="button"
-                      className="btn-primary btn-sm"
-                      style={{ flex: 1, justifyContent: 'center' }}
-                      onClick={() => onUpdateOrderStatus(orderId, 'ACCEPTED')}
-                    >
-                      ✓ ACCEPT ORDER
-                    </button>
-                  )}
-
-                  {status === 'ACCEPTED' && (
+                  {(status === 'NEW' || status === 'ACCEPTED') && (
                     <button
                       type="button"
                       className="btn-primary btn-sm"

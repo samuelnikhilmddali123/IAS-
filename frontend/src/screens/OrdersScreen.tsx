@@ -41,6 +41,40 @@ export const OrdersScreen: React.FC = () => {
     logout,
   } = useCanteen();
 
+  // Order Placement Feedback Modal & Auto-Logout State
+  const [successOrder, setSuccessOrder] = React.useState<BackendOrder | null>(null);
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = React.useState<boolean>(false);
+  const [successActionType, setSuccessActionType] = React.useState<'checkout' | 'bill'>('checkout');
+  const [countdown, setCountdown] = React.useState<number>(4);
+
+  const handleOrderDoneAndLogout = React.useCallback(() => {
+    setIsSuccessModalOpen(false);
+    clearCart();
+    const orderNum = successOrder?.orderNumber ? `Order #${successOrder.orderNumber}` : 'Order';
+    const tokenStr = successOrder?.tokenNumber ? ` (Token #${successOrder.tokenNumber})` : '';
+    logout(`✓ ${orderNum}${tokenStr} submitted and is directly PREPARING in the kitchen.`);
+  }, [clearCart, logout, successOrder]);
+
+  React.useEffect(() => {
+    let interval: any;
+    if (isSuccessModalOpen) {
+      setCountdown(4);
+      interval = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            handleOrderDoneAndLogout();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSuccessModalOpen, handleOrderDoneAndLogout]);
+
   // ==========================================
   // ACTION 1: CHECKOUT HANDLER
   // ==========================================
@@ -57,9 +91,9 @@ export const OrdersScreen: React.FC = () => {
     try {
       const result = await checkoutCart();
       if (result.success) {
-        // Requirement 1 & 2: Automatic logout upon success, no extra modal or logout button
-        clearCart();
-        logout();
+        setSuccessOrder(result.order || null);
+        setSuccessActionType('checkout');
+        setIsSuccessModalOpen(true);
       } else {
         setErrorMessage(result.error || 'Failed to send order to kitchen. Please try again.');
       }
@@ -87,9 +121,9 @@ export const OrdersScreen: React.FC = () => {
     try {
       const result = await generateBillCart();
       if (result.success) {
-        // Requirement 1 & 2: Automatic logout upon success, no extra modal or logout button
-        clearCart();
-        logout();
+        setSuccessOrder(result.order || null);
+        setSuccessActionType('bill');
+        setIsSuccessModalOpen(true);
       } else {
         setErrorMessage(result.error || 'Failed to generate and send bill. Please try again.');
       }
@@ -405,7 +439,7 @@ export const OrdersScreen: React.FC = () => {
               </TouchableOpacity>
 
               <Text style={styles.actionSubtext}>
-                Sends order directly to kitchen queue (Status: NEW) & logs out.
+                Sends order directly to kitchen queue (Status: PREPARING) & logs out.
               </Text>
 
               {/* 2. GENERATE BILL BUTTON */}
@@ -445,6 +479,59 @@ export const OrdersScreen: React.FC = () => {
           </View>
         </View>
       </View>
+
+      {/* Order Success & Immediate Logout Modal */}
+      <Modal
+        visible={isSuccessModalOpen}
+        transparent
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.successIconCircle}>
+              <AppIcon name="checkmark-circle" size={44} color="#15803d" />
+            </View>
+
+            <Text style={styles.modalTitle}>
+              {successActionType === 'bill' ? 'Bill Generated & Order Sent!' : 'Order Placed Successfully!'}
+            </Text>
+
+            {successOrder?.tokenNumber ? (
+              <View style={styles.tokenPill}>
+                <Text style={styles.tokenPillText}>
+                  Token: #{successOrder.tokenNumber}
+                </Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.modalMessage}>
+              {successOrder?.orderNumber ? (
+                <>Order <Text style={{ fontWeight: '700', color: '#0f172a' }}>#{successOrder.orderNumber}</Text> has</>
+              ) : (
+                'Your order has'
+              )}{' '}
+              been sent directly to the kitchen and is now{' '}
+              <Text style={{ fontWeight: '800', color: '#0284c7' }}>PREPARING</Text>.{'\n\n'}
+              No kitchen acceptance needed — preparation starts immediately!
+            </Text>
+
+            <View style={styles.logoutNoticeBox}>
+              <AppIcon name="log-out-outline" size={16} color="#15803d" style={{ marginRight: 6 }} />
+              <Text style={styles.logoutNoticeText}>
+                Logging out automatically in {countdown}s to protect officer session...
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalDoneBtn}
+              onPress={handleOrderDoneAndLogout}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.modalDoneBtnText}>Sign Out & Return to Login ➔</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };

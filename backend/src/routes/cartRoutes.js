@@ -410,7 +410,9 @@ router.post('/checkout', userAuth, async (req, res) => {
             pickupTime,
             orderNote: (req.body.orderNote || '').trim(),
             paymentMethod: 'restaurant_qr',
-            paymentStatus: 'UNPAID'
+            paymentStatus: 'UNPAID',
+            status: 'PREPARING',
+            kitchenStatus: 'PREPARING'
         };
 
         // Create & Save order using existing Order model (also emits KOT via Socket.IO to Kitchen)
@@ -421,7 +423,7 @@ router.post('/checkout', userAuth, async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: 'Order sent to kitchen successfully.',
+            message: 'Order sent to kitchen successfully and is preparing.',
             order
         });
     } catch (error) {
@@ -490,7 +492,9 @@ router.post('/generate-bill', userAuth, async (req, res) => {
             pickupTime,
             orderNote: (req.body.orderNote || '').trim(),
             paymentMethod: 'restaurant_qr',
-            paymentStatus: 'UNPAID'
+            paymentStatus: 'UNPAID',
+            status: 'PREPARING',
+            kitchenStatus: 'PREPARING'
         };
 
         // Create order in MongoDB using existing Order model

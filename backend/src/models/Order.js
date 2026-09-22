@@ -165,12 +165,12 @@ const orderSchema = new mongoose.Schema(
                 "VALIDATED",
                 "REJECTED"
             ],
-            default: "NEW"
+            default: "PREPARING"
         },
         kitchenStatus: {
             type: String,
             enum: ["NEW", "ACCEPTED", "PREPARING", "READY", "COMPLETED", "CANCELLED"],
-            default: "NEW"
+            default: "PREPARING"
         },
 
 

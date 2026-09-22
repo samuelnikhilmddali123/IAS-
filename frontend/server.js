@@ -5,30 +5,11 @@ const url = require('url');
 const PORT = process.env.PORT || 3000;
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '2d8c514adc81802ac3aeb0339ae905060021acc30a101f2177316f2bae88e950';
 
-function fetchSerpApiGoogleImages(query) {
-  return new Promise((resolve, reject) => {
-    const apiUrl =
-      'https://serpapi.com/search.json?engine=google_images&q=' +
-      encodeURIComponent(query + ' IAS officer') +
-      '&api_key=' +
-      SERPAPI_KEY +
-      '&num=10';
-
-    https
-      .get(apiUrl, (res) => {
-        let data = '';
-        res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            resolve(json.images_results || []);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      })
-      .on('error', reject);
-  });
+let officerImageService = null;
+try {
+  officerImageService = require('../backend/src/services/officerImageService');
+} catch (e) {
+  // If run independently
 }
 
 const server = http.createServer(async (req, res) => {
@@ -89,27 +70,22 @@ async function handleSearch(name, res) {
   }
 
   const queryName = name.trim();
-  console.log(`[${new Date().toISOString()}] Searching Google Images for: "${queryName}"`);
+  console.log(`[${new Date().toISOString()}] Searching Images for: "${queryName}"`);
 
   try {
-    const rawImages = await fetchSerpApiGoogleImages(queryName);
-    const results = rawImages.slice(0, 10).map((img, idx) => ({
-      id: `google-img-${idx}`,
-      thumbnail: img.thumbnail,
-      original: img.original,
-      title: img.title || `${queryName} (IAS)`,
-      source: img.source || 'Google Images',
-      link: img.link,
-    }));
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
+    let result = null;
+    if (officerImageService && officerImageService.searchOfficerImages) {
+      result = await officerImageService.searchOfficerImages(queryName, { apiKey: SERPAPI_KEY });
+    } else {
+      result = {
         success: true,
         name: queryName,
-        images: results,
-      })
-    );
+        images: []
+      };
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
   } catch (error) {
     console.error('Error fetching images:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' });

@@ -19,6 +19,16 @@ export const Header = ({ isOnline, onRefresh, refreshing }) => {
           <span>{refreshing ? '⏳' : '↻'}</span> {refreshing ? 'Refreshing...' : 'Refresh'}
         </button>
         <a
+          href="/api/docs"
+          target="_blank"
+          rel="noreferrer"
+          className="btn-refresh"
+          style={{ textDecoration: 'none', background: 'rgba(59, 130, 246, 0.4)' }}
+          title="Open Interactive Swagger API Documentation"
+        >
+          📖 Swagger Docs
+        </a>
+        <a
           href="http://localhost:8081"
           target="_blank"
           rel="noreferrer"

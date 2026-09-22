@@ -212,8 +212,6 @@ export const DashboardPage = ({
                           value={status}
                           onChange={(e) => onUpdateOrderStatus(order.id || order._id, e.target.value)}
                         >
-                          <option value="NEW">New</option>
-                          <option value="ACCEPTED">Accepted</option>
                           <option value="PREPARING">Preparing</option>
                           <option value="READY">Ready</option>
                           <option value="COMPLETED">Completed</option>

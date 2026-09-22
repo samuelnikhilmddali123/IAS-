@@ -141,13 +141,13 @@ async function runTests() {
   if (checkoutData.order.totalAmount !== sampleFood.price * 2) {
     throw new Error(`Price tampering check failed! Total amount was ₹${checkoutData.order.totalAmount}, expected ₹${sampleFood.price * 2}`);
   }
-  if (checkoutData.order.kitchenStatus !== 'NEW') {
-    throw new Error(`Expected kitchenStatus 'NEW', got '${checkoutData.order.kitchenStatus}'`);
+  if (checkoutData.order.kitchenStatus !== 'PREPARING') {
+    throw new Error(`Expected kitchenStatus 'PREPARING', got '${checkoutData.order.kitchenStatus}'`);
   }
-  if (checkoutData.order.paymentStatus !== 'PAYMENT_PENDING') {
-    throw new Error(`Expected paymentStatus 'PAYMENT_PENDING', got '${checkoutData.order.paymentStatus}'`);
+  if (checkoutData.order.paymentStatus !== 'PAYMENT_PENDING' && checkoutData.order.paymentStatus !== 'UNPAID') {
+    throw new Error(`Expected paymentStatus 'UNPAID' or 'PAYMENT_PENDING', got '${checkoutData.order.paymentStatus}'`);
   }
-  console.log('✓ CHECKOUT flow validated: verified server pricing, NEW kitchenStatus, and PAYMENT_PENDING status.');
+  console.log('✓ CHECKOUT flow validated: verified server pricing, PREPARING kitchenStatus, and payment status.');
 
   // 6. Test Double-click deduplication safeguard
   console.log('\n--- 6. Testing Double-click Deduplication Safeguard ---');

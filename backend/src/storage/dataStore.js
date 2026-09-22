@@ -521,7 +521,8 @@ const dataStore = {
       paymentStatus: orderData.paymentStatus || 'PAYMENT_PENDING',
       orderNote: orderData.orderNote || '',
       mealSlot: orderData.mealSlot || 'General',
-      status: 'PREPARING', // Default to PREPARING for good live feedback
+      status: 'PREPARING', // Default to PREPARING for direct kitchen flow
+      kitchenStatus: 'PREPARING',
       tokenNumber: Math.floor(10 + Math.random() * 90),
       createdAt: new Date().toISOString()
     };

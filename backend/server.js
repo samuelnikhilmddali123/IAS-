@@ -24,6 +24,8 @@ const orderRoutes = require('./src/routes/orderRoutes');
 const whatsappRoutes = require('./src/routes/whatsappRoutes');
 const orderService = require('./src/services/orderService');
 const dataStore = require('./src/storage/dataStore');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./src/docs/swaggerSpec');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -50,55 +52,22 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// SerpApi Google Images search proxy
-function fetchSerpApiGoogleImages(query) {
-  return new Promise((resolve, reject) => {
-    const apiUrl =
-      'https://serpapi.com/search.json?engine=google_images&q=' +
-      encodeURIComponent(query + ' IAS officer') +
-      '&api_key=' +
-      SERPAPI_KEY +
-      '&num=10';
-
-    https
-      .get(apiUrl, (res) => {
-        let data = '';
-        res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            resolve(json.images_results || []);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      })
-      .on('error', reject);
-  });
-}
+// Robust multi-source image search (SerpApi + Live Web Search + Wikimedia + Curated Directory)
+const { searchOfficerImages } = require('./src/services/officerImageService');
 
 const handleOfficerSearch = async (req, res) => {
-  const name = (req.query.name || req.body.name || '').trim();
+  const name = (req.query?.name || req.body?.name || '').trim();
+  const type = (req.query?.type || req.body?.type || '').trim();
   if (!name) {
     return res.status(400).json({ success: false, message: 'Officer name is required' });
   }
 
   try {
-    const rawImages = await fetchSerpApiGoogleImages(name);
-    const results = rawImages.slice(0, 10).map((img, idx) => ({
-      id: `google-img-${idx}`,
-      thumbnail: img.thumbnail,
-      original: img.original,
-      title: img.title || `${name} (IAS)`,
-      source: img.source || 'Google Images',
-      link: img.link,
-    }));
-
-    res.json({
-      success: true,
-      name,
-      images: results,
+    const searchRes = await searchOfficerImages(name, {
+      type,
+      apiKey: SERPAPI_KEY
     });
+    res.json(searchRes);
   } catch (error) {
     console.error('Error fetching officer photos:', error.message);
     res.status(500).json({
@@ -119,6 +88,48 @@ app.use('/api/foods', foodRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+
+// Programmatic Catalog of All APIs
+const getAllApis = (req, res) => {
+  const apis = [];
+  for (const [pathKey, pathObj] of Object.entries(swaggerSpec.paths)) {
+    for (const [method, details] of Object.entries(pathObj)) {
+      apis.push({
+        method: method.toUpperCase(),
+        path: pathKey,
+        tag: details.tags ? details.tags[0] : 'General',
+        summary: details.summary || '',
+        description: details.description || '',
+        authRequired: !!(details.security && details.security.length > 0)
+      });
+    }
+  }
+  res.json({
+    success: true,
+    totalApis: apis.length,
+    apis
+  });
+};
+
+app.get('/api/docs/apis', getAllApis);
+app.get('/api/apis', getAllApis);
+
+// Raw OpenAPI 3.0 JSON Specification
+app.get('/api/docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json(swaggerSpec);
+});
+
+// Swagger Interactive API Documentation UI
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'IAS Officers Canteen API Docs | Government of India',
+  customCss: '.swagger-ui .topbar { background-color: #0a3d31; } .swagger-ui .topbar .topbar-wrapper img { content: url("https://upload.wikimedia.org/wikipedia/commons/5/55/Emblem_of_India.svg"); width: 40px; }',
+  swaggerOptions: {
+    persistAuthorization: true,
+    docExpansion: 'list',
+    filter: true
+  }
+}));
 
 // Admin React SPA direct entry and wildcard routing for all dedicated pages
 // (/admin/dashboard, /admin/food-menu, /admin/orders, /admin/whatsapp, /admin/officers)
@@ -176,6 +187,9 @@ async function startServer() {
     console.log(`  Orders API:      http://localhost:${PORT}/api/orders  `);
     console.log(`  WhatsApp & QR:   http://localhost:${PORT}/api/whatsapp`);
     console.log(`  Officer Search:  http://localhost:${PORT}/search-officer`);
+    console.log(`  Swagger API Docs: http://localhost:${PORT}/api/docs   `);
+    console.log(`  OpenAPI JSON:    http://localhost:${PORT}/api/docs.json`);
+    console.log(`  All APIs JSON:   http://localhost:${PORT}/api/docs/apis`);
     console.log(`=======================================================`);
   });
   // Initialize Socket.io for Kitchen Order Ticket (KOT) delivery

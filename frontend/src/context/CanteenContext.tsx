@@ -166,7 +166,9 @@ interface CanteenContextType {
   registerUser: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
   qrLogin: (qrPayload: string) => Promise<{ success: boolean; message?: string }>;
   lastDispatchedQr: { qrImage?: string; qrPayload?: string; fromWhatsApp?: string } | null;
-  logout: () => void;
+  logout: (notice?: string) => void;
+  logoutNotice: string | null;
+  setLogoutNotice: (notice: string | null) => void;
   activeTab: ScreenTab;
   setActiveTab: (tab: ScreenTab) => void;
   activeCategory: CategoryId;
@@ -256,6 +258,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Success Feedback Modal
   const [actionSuccessModal, setActionSuccessModal] = useState<ActionSuccessInfo | null>(null);
   const [isOrderSuccessModalOpen, setIsOrderSuccessModalOpen] = useState<boolean>(false);
+  const [logoutNotice, setLogoutNotice] = useState<string | null>(null);
 
   // Dynamic Menu from Backend
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -606,7 +609,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   // Logout Handler (Clears all state, tokens, storage, and resets authenticated status)
-  const logout = useCallback(() => {
+  const logout = useCallback((notice?: string) => {
     moduleAuthToken = '';
     setAuthToken('');
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
@@ -636,6 +639,9 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setActionSuccessModal(null);
     setIsOrderSuccessModalOpen(false);
     setActiveTab('home');
+    if (notice) {
+      setLogoutNotice(notice);
+    }
   }, []);
 
   const addToCart = (item: MenuItem) => {
@@ -906,6 +912,8 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         qrLogin,
         lastDispatchedQr,
         logout,
+        logoutNotice,
+        setLogoutNotice,
         activeTab,
         setActiveTab,
         activeCategory,

@@ -7,6 +7,7 @@ const dataStore = require('../storage/dataStore');
 const qrService = require('./qrService');
 const whatsappService = require('./whatsappService');
 const { generatePasswordFingerprint } = require('../utils/cryptoUtils');
+const { resolveOfficerAvatar, generateOfficialInitialsAvatar } = require('./officerImageService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'canteen_super_secret_jwt_key_2026_secure';
 
@@ -184,7 +185,7 @@ const registerUser = async (userData) => {
   const hashedPassword = await bcrypt.hash(officerPin, 10);
   const cleanPhone = officerPhone.replace(/\D/g, '').slice(-10);
   const generatedOfficerId = officerId || ('GOI-DL-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000));
-  const defaultAvatar = avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80';
+  const resolvedAvatar = await resolveOfficerAvatar(officerName, avatar);
   const defaultDesignation = designation || 'IAS Officer • Special Duty';
   const defaultDepartment = department || 'Cabinet Secretariat • Government of India';
 
@@ -210,7 +211,7 @@ const registerUser = async (userData) => {
         mongoUser.password = hashedPassword;
         mongoUser.passwordUniquenessFingerprint = passwordFingerprint;
         mongoUser.pin = officerPin;
-        if (avatar) mongoUser.avatar = avatar;
+        mongoUser.avatar = resolvedAvatar;
         if (designation) mongoUser.designation = designation;
         if (department) mongoUser.department = department;
         await mongoUser.save();
@@ -223,7 +224,7 @@ const registerUser = async (userData) => {
           password: hashedPassword,
           passwordUniquenessFingerprint: passwordFingerprint,
           pin: officerPin,
-          avatar: defaultAvatar,
+          avatar: resolvedAvatar,
           designation: defaultDesignation,
           department: defaultDepartment,
           officerId: generatedOfficerId,
@@ -259,7 +260,7 @@ const registerUser = async (userData) => {
     phone: officerPhone,
     pin: officerPin,
     passwordUniquenessFingerprint: passwordFingerprint,
-    avatar: defaultAvatar,
+    avatar: resolvedAvatar,
     designation: defaultDesignation,
     department: defaultDepartment,
     officerId: generatedOfficerId
@@ -541,7 +542,7 @@ const qrLogin = async (qrPayload) => {
       name: validation.userName || 'IAS Officer',
       phone: validation.userPhone,
       email: (validation.userName || 'officer').toLowerCase().replace(/\s+/g, '.') + '@gov.in',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+      avatar: generateOfficialInitialsAvatar(validation.userName || 'IAS Officer'),
       designation: 'IAS Officer • Special Duty',
       department: 'Cabinet Secretariat • Government of India',
       officerId: 'GOI-DL-2026-8941'
