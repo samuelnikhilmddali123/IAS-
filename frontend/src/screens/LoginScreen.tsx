@@ -14,12 +14,14 @@ import {
   useWindowDimensions,
   Keyboard,
   Animated,
+  Easing,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import jsQR from 'jsqr';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { io, Socket } from 'socket.io-client';
 import { AppIcon } from '../components/AppIcon';
-import { useCanteen, fetchWithFallback } from '../context/CanteenContext';
+import { useCanteen, fetchWithFallback, getApiBase, QuickLoginSession } from '../context/CanteenContext';
 
 const BACKGROUND_IMG = require('../../assets/BG.png');
 const EMBLEM_IMG = require('../../assets/6a72e4e7-5e3f-43cb-bd57-bac2a1fcb7f4.png');
@@ -94,12 +96,123 @@ const DEFAULT_SUGGESTED_OFFICERS: OfficerPhotoItem[] = [
   },
 ];
 
+const getPhoneLast2Digits = (rawPhone: string): string => {
+  const digits = (rawPhone || '').replace(/\D/g, '');
+  return digits.length >= 2 ? digits.slice(-2) : '';
+};
+
+// Map real KOT lifecycle status to authentic UI label and indicator color
+const mapKotStatus = (rawStatus: string | undefined): { label: string; dotColor: string } => {
+  if (!rawStatus) return { label: 'Preparing food', dotColor: '#22c55e' };
+  const s = String(rawStatus).toUpperCase().trim();
+
+  if (s === 'READY' || s === 'ALMOST_READY') {
+    return { label: 'Dish is ready!', dotColor: '#10b981' };
+  }
+  if (s === 'PREPARING' || s === 'ACCEPTED' || s === 'COOKING') {
+    return { label: 'Cooking...', dotColor: '#f59e0b' };
+  }
+  if (s === 'NEW' || s === 'PENDING' || s === 'RECEIVED' || s === 'PLACED') {
+    return { label: 'Preparing food', dotColor: '#22c55e' };
+  }
+  if (s === 'COMPLETED' || s === 'SERVED' || s === 'DELIVERED') {
+    return { label: 'Dish is ready!', dotColor: '#10b981' };
+  }
+  if (s === 'CANCELLED') {
+    return { label: 'Order cancelled', dotColor: '#ef4444' };
+  }
+  if (s === 'NO_ORDERS') {
+    return { label: 'No active orders', dotColor: '#9ca3af' };
+  }
+  if (rawStatus === 'Preparing food') return { label: 'Preparing food', dotColor: '#22c55e' };
+  if (rawStatus === 'Cooking...') return { label: 'Cooking...', dotColor: '#f59e0b' };
+  if (rawStatus === 'Almost ready') return { label: 'Almost ready', dotColor: '#3b82f6' };
+  if (rawStatus === 'Dish is ready!') return { label: 'Dish is ready!', dotColor: '#10b981' };
+
+  return { label: rawStatus, dotColor: '#22c55e' };
+};
+
+// Component for recently logged-out officer with avatar immediately visible and status box animated slowly
+const RecentOfficerItem: React.FC<{
+  session: QuickLoginSession;
+  onPress: () => void;
+  getFallbackAvatar: (name: string) => string;
+}> = ({ session, onPress, getFallbackAvatar }) => {
+  const boxAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    boxAnim.setValue(0);
+    // Avatar is visible immediately after logout; status box glides out with a slow, smooth animation
+    const timer = setTimeout(() => {
+      Animated.timing(boxAnim, {
+        toValue: 1,
+        duration: 1000, // Slow, graceful slide-in animation
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [session.orderStatus]);
+
+  const { label, dotColor } = mapKotStatus(session.orderStatus);
+
+  return (
+    <TouchableOpacity
+      style={styles.sideItemRow}
+      activeOpacity={0.85}
+      onPress={onPress}
+      accessibilityLabel={`Log in as ${session.name}, Order status: ${label}`}
+    >
+      {/* Order Status Pill - animated in slowly */}
+      <Animated.View
+        style={[
+          styles.statusPill,
+          {
+            opacity: boxAnim,
+            transform: [
+              {
+                translateX: boxAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [24, 0],
+                }),
+              },
+              {
+                scale: boxAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.85, 1],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <Text style={styles.statusPillText}>{label}</Text>
+      </Animated.View>
+
+      {/* Officer Avatar with Status Dot - comes immediately without delay */}
+      <View style={styles.sideAvatarWrapper}>
+        <Image
+          source={{ uri: session.avatar || getFallbackAvatar(session.name) }}
+          style={styles.sideAvatar}
+          resizeMode="cover"
+        />
+        <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 export const LoginScreen: React.FC = () => {
   const { width, height } = useWindowDimensions();
-  const { login, registerUser, qrLogin, logoutNotice, setLogoutNotice } = useCanteen();
+  const { login, registerUser, qrLogin, quickLogin, logoutNotice, setLogoutNotice } = useCanteen();
 
   // Mode: 'login' | 'register' | 'qr'
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'qr'>('login');
+
+  // 1-Hour Recent Logged-out Sessions & Order Status
+  const [recentSessions, setRecentSessions] = useState<QuickLoginSession[]>([]);
+  const [scrollIndex, setScrollIndex] = useState<number>(0);
 
   // Camera & QR Scanner States
   const [showCameraPermissionModal, setShowCameraPermissionModal] = useState<boolean>(false);
@@ -166,6 +279,7 @@ export const LoginScreen: React.FC = () => {
   const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
 
   const isWideScreen = width >= 640;
+  const phoneLast2Digits = getPhoneLast2Digits(regPhone);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState<boolean>(false);
@@ -264,6 +378,164 @@ export const LoginScreen: React.FC = () => {
       if (animLoop) animLoop.stop();
     };
   }, [isCameraActive, scanAnim]);
+
+  // Load and synchronize 1-hour recent logged-out sessions strictly from real orders (no random dummy data)
+  useEffect(() => {
+    const loadSessions = async () => {
+      if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('canteen_recent_logouts');
+          let list: QuickLoginSession[] = raw ? JSON.parse(raw) : [];
+          const oneHourAgo = Date.now() - 3600000;
+          // Purge expired (> 1 hr) and any old demo/random sessions
+          list = list.filter((s) => s.logoutTime && s.logoutTime > oneHourAgo && !s.userId.startsWith('officer-'));
+
+          if (list.length > 0) {
+            // For each real logged-out officer, query their actual latest order from backend
+            for (let i = 0; i < list.length; i++) {
+              const sess = list[i];
+              try {
+                const res = await fetch(`${getApiBase()}/api/orders?userId=${encodeURIComponent(sess.userId)}`);
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.orders && data.orders.length > 0) {
+                    const latest = data.orders[0];
+                    list[i].orderStatus = latest.kitchenStatus || latest.status || 'NEW';
+                    list[i].orderId = latest.id || latest._id;
+                  } else {
+                    list[i].orderStatus = 'NO_ORDERS';
+                  }
+                }
+              } catch {}
+            }
+            localStorage.setItem('canteen_recent_logouts', JSON.stringify(list));
+          } else {
+            localStorage.removeItem('canteen_recent_logouts');
+          }
+
+          setRecentSessions(list);
+        } catch (e) {
+          console.warn('Failed loading recent sessions:', e);
+        }
+      }
+    };
+
+    loadSessions();
+
+    // Real-Time Socket.IO Listener for KOT Order Status Updates
+    let socket: Socket | null = null;
+    try {
+      socket = io(getApiBase(), {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 10,
+      });
+
+      const handleKotUpdate = (data: any) => {
+        if (!data) return;
+        const orderId = data.id || data._id || data.orderId || data.order?.id || data.order?._id;
+        const userId = data.userId || data.order?.userId;
+        const userPhone = data.userPhone || data.order?.userPhone;
+        const newKitchenStatus = data.kitchenStatus || data.status || data.order?.kitchenStatus || data.order?.status;
+
+        if (!newKitchenStatus) return;
+
+        setRecentSessions((prevSessions) => {
+          let hasChange = false;
+          const updated = prevSessions.map((sess) => {
+            const cleanSessPhone = (sess.mobile || '').replace(/\D/g, '').slice(-10);
+            const cleanOrderPhone = (userPhone || '').replace(/\D/g, '').slice(-10);
+            const isMatch =
+              (orderId && sess.orderId === orderId) ||
+              (userId && sess.userId === userId) ||
+              (cleanSessPhone && cleanOrderPhone && cleanSessPhone === cleanOrderPhone);
+
+            if (isMatch && sess.orderStatus !== newKitchenStatus) {
+              hasChange = true;
+              return { ...sess, orderStatus: newKitchenStatus, orderId: orderId || sess.orderId };
+            }
+            return sess;
+          });
+
+          if (hasChange && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+            localStorage.setItem('canteen_recent_logouts', JSON.stringify(updated));
+          }
+          return hasChange ? updated : prevSessions;
+        });
+      };
+
+      socket.on('orderStatusUpdated', handleKotUpdate);
+      socket.on('orderUpdated', handleKotUpdate);
+      socket.on('newKOT', handleKotUpdate);
+    } catch (err) {
+      console.warn('[LOGIN SOCKET] KOT listener error:', err);
+    }
+
+    // 4-second polling to ensure live KOT sync and 1-hour expiration purge
+    const interval = setInterval(async () => {
+      if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('canteen_recent_logouts');
+        if (!raw) return;
+        try {
+          let list: QuickLoginSession[] = JSON.parse(raw);
+          const oneHourAgo = Date.now() - 3600000;
+          const freshList = list.filter((s) => s.logoutTime && s.logoutTime > oneHourAgo && !s.userId.startsWith('officer-'));
+          
+          if (freshList.length !== list.length) {
+            localStorage.setItem('canteen_recent_logouts', JSON.stringify(freshList));
+          }
+
+          // Poll live order status for real logged-out officers
+          for (let i = 0; i < freshList.length; i++) {
+            const sess = freshList[i];
+            if (sess.userId) {
+              try {
+                const res = await fetch(`${getApiBase()}/api/orders?userId=${encodeURIComponent(sess.userId)}`);
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.orders && data.orders.length > 0) {
+                    const latest = data.orders[0];
+                    const st = latest.kitchenStatus || latest.status || 'NEW';
+                    if (st !== sess.orderStatus) {
+                      freshList[i].orderStatus = st;
+                      freshList[i].orderId = latest.id || latest._id;
+                      localStorage.setItem('canteen_recent_logouts', JSON.stringify(freshList));
+                    }
+                  } else if (sess.orderStatus !== 'NO_ORDERS') {
+                    freshList[i].orderStatus = 'NO_ORDERS';
+                    localStorage.setItem('canteen_recent_logouts', JSON.stringify(freshList));
+                  }
+                }
+              } catch {}
+            }
+          }
+
+          setRecentSessions(freshList);
+        } catch {}
+      }
+    }, 4000);
+
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        socket.off('orderStatusUpdated');
+        socket.off('orderUpdated');
+        socket.off('newKOT');
+        socket.disconnect();
+      }
+    };
+  }, []);
+
+  const handleQuickLogin = async (session: QuickLoginSession) => {
+    try {
+      setIsSubmitting(true);
+      await quickLogin(session);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Quick login failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Cleanly stop camera and frame loop
   const stopLiveCamera = useCallback(() => {
@@ -537,8 +809,14 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
-    if (!regPin.trim() || regPin.trim().length < 4) {
-      setRegErrorMsg('Please create a 4 to 6-digit PIN');
+    const phoneLast2Digits = getPhoneLast2Digits(regPhone);
+    if (!phoneLast2Digits || phoneLast2Digits.length < 2) {
+      setRegErrorMsg('Please enter your 10-digit phone number first');
+      return;
+    }
+
+    if (!regPin.trim() || regPin.trim().length !== 4) {
+      setRegErrorMsg('Please enter the remaining 4 digits of your password');
       return;
     }
 
@@ -547,6 +825,8 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
+    const fullPin = `${phoneLast2Digits}${regPin.trim()}`;
+
     setRegErrorMsg('');
     setIsSubmitting(true);
     try {
@@ -554,7 +834,7 @@ export const LoginScreen: React.FC = () => {
         name: regFullName.trim(),
         email: regEmail.trim(),
         phone: regPhone.trim(),
-        pin: regPin.trim(),
+        pin: fullPin,
         avatar: selectedPhoto,
       });
       if (!result.success) {
@@ -812,8 +1092,8 @@ export const LoginScreen: React.FC = () => {
           ) : authMode === 'login' ? (
             <View style={styles.cardWrapper}>
               <View style={styles.loginCard}>
-                <Text style={styles.cardHeading}>LOGIN</Text>
-                <Text style={styles.cardSubheading}>Enter your unique password to continue</Text>
+                <Text style={styles.cardHeading}>Login to Canteen Services</Text>
+                <Text style={styles.cardSubheading}>Access your account securely</Text>
 
                 {logoutNotice ? (
                   <View style={styles.logoutSuccessBanner}>
@@ -831,9 +1111,9 @@ export const LoginScreen: React.FC = () => {
                   </View>
                 ) : null}
 
-                {/* Password Input Only (Requirement 13) */}
+                {/* PIN Input */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Password</Text>
+                  <Text style={styles.inputLabel}>PIN</Text>
                   <TouchableOpacity
                     style={styles.inputContainer}
                     activeOpacity={1}
@@ -843,9 +1123,11 @@ export const LoginScreen: React.FC = () => {
                     <TextInput
                       ref={pinInputRef}
                       style={styles.textInput}
-                      placeholder="Enter your unique password"
+                      placeholder="Enter 6-digit PIN"
                       placeholderTextColor="#9ca3af"
                       autoCapitalize="none"
+                      keyboardType="numeric"
+                      maxLength={6}
                       disableFullscreenUI={true}
                       secureTextEntry={!showPin}
                       value={pin}
@@ -871,6 +1153,9 @@ export const LoginScreen: React.FC = () => {
                       />
                     </TouchableOpacity>
                   </TouchableOpacity>
+                  <Text style={styles.pinHelperText}>
+                    Enter the last 2 digits of your mobile number and any 4 digits.
+                  </Text>
                 </View>
 
                 {/* Login Button */}
@@ -883,7 +1168,10 @@ export const LoginScreen: React.FC = () => {
                   {isSubmitting ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <Text style={styles.primaryActionButtonText}>LOGIN</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={styles.primaryActionButtonText}>Login</Text>
+                      <AppIcon name="arrow-forward" size={17} color="#ffffff" style={{ marginLeft: 8 }} />
+                    </View>
                   )}
                 </TouchableOpacity>
 
@@ -907,9 +1195,9 @@ export const LoginScreen: React.FC = () => {
                     <AppIcon name="qr-code-outline" size={24} color="#0a3d31" />
                   </View>
                   <View style={styles.qrTextCol}>
-                    <Text style={styles.qrActionTitle}>Scan QR to Login</Text>
+                    <Text style={styles.qrActionTitle}>Scan QR to Continue</Text>
                     <Text style={styles.qrActionSubtitle}>
-                      Scan the lifetime login QR credential sent to your WhatsApp
+                      Use Canteen Services App to login
                     </Text>
                   </View>
                   <AppIcon name="chevron-forward" size={18} color="#0a3d31" />
@@ -939,6 +1227,78 @@ export const LoginScreen: React.FC = () => {
                   <Text style={styles.helpLinkText}>Need help?</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Right Floating Recent Logouts & Order Status Widget (Desktop / Wide screen) */}
+              {recentSessions.length > 0 && isWideScreen ? (
+                <View style={styles.sideWidgetContainer}>
+                  {/* Up Arrow */}
+                  <TouchableOpacity
+                    style={styles.sideArrowBtn}
+                    onPress={() => setScrollIndex(Math.max(0, scrollIndex - 1))}
+                    activeOpacity={0.7}
+                    disabled={scrollIndex === 0}
+                  >
+                    <AppIcon name="chevron-up" size={18} color={scrollIndex === 0 ? '#9ca3af' : '#1f2937'} />
+                  </TouchableOpacity>
+
+                  {/* Officer Status Cards */}
+                  <View style={styles.sideCardsColumn}>
+                    {recentSessions.slice(scrollIndex, scrollIndex + 4).map((session, idx) => (
+                      <RecentOfficerItem
+                        key={session.userId + idx}
+                        session={session}
+                        onPress={() => handleQuickLogin(session)}
+                        getFallbackAvatar={getFallbackAvatar}
+                      />
+                    ))}
+                  </View>
+
+                  {/* Down Arrow */}
+                  <TouchableOpacity
+                    style={styles.sideArrowBtn}
+                    onPress={() => setScrollIndex(Math.min(Math.max(0, recentSessions.length - 4), scrollIndex + 1))}
+                    activeOpacity={0.7}
+                    disabled={scrollIndex + 4 >= recentSessions.length}
+                  >
+                    <AppIcon
+                      name="chevron-down"
+                      size={18}
+                      color={scrollIndex + 4 >= recentSessions.length ? '#9ca3af' : '#1f2937'}
+                    />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {/* Mobile / Tablet Compact Sessions */}
+              {recentSessions.length > 0 && !isWideScreen ? (
+                <View style={styles.mobileSideWidget}>
+                  <Text style={styles.mobileSideTitle}>Recent Sessions (Expires in 1 hr)</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 4 }}>
+                    {recentSessions.map((session, idx) => {
+                      const { label, dotColor } = mapKotStatus(session.orderStatus);
+                      return (
+                        <TouchableOpacity
+                          key={session.userId + idx}
+                          style={styles.mobileSideItem}
+                          onPress={() => handleQuickLogin(session)}
+                        >
+                          <View style={styles.sideAvatarWrapper}>
+                            <Image
+                              source={{ uri: session.avatar || getFallbackAvatar(session.name) }}
+                              style={[styles.sideAvatar, { width: 36, height: 36, borderRadius: 18 }]}
+                            />
+                            <View style={[styles.statusDot, { backgroundColor: dotColor, width: 9, height: 9, borderRadius: 4.5 }]} />
+                          </View>
+                          <View style={{ marginLeft: 6 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#1f2937' }}>{session.name.split(' ')[0]}</Text>
+                            <Text style={{ fontSize: 10, color: '#0a3d31', fontWeight: '600' }}>{label}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              ) : null}
             </View>
           ) : (
             /* ==================== REGISTER MODE ==================== */
@@ -1040,27 +1400,31 @@ export const LoginScreen: React.FC = () => {
                     />
                   </TouchableOpacity>
 
-                  {/* 4. Create 6-digit PIN */}
+                  {/* 4. Create PIN (Last 2 digits from phone number + 4 digits of choice) */}
                   <TouchableOpacity
                     style={styles.inputContainerCompact}
                     activeOpacity={1}
                     onPress={() => regPinRef.current?.focus()}
                   >
                     <AppIcon name="lock-closed-outline" size={17} color="#4b5563" />
+                    <View style={styles.phoneDigitsInline}>
+                      <Text style={styles.phoneDigitsText}>{phoneLast2Digits || '--'}</Text>
+                    </View>
                     <TextInput
                       ref={regPinRef}
                       style={styles.textInput}
-                      placeholder="Create 6-digit PIN"
+                      placeholder="Enter 4-digit code"
                       placeholderTextColor="#9ca3af"
                       keyboardType="numeric"
                       disableFullscreenUI={true}
                       secureTextEntry={!showRegPin}
                       value={regPin}
                       onChangeText={(val) => {
-                        setRegPin(val);
+                        const clean = val.replace(/\D/g, '').slice(0, 4);
+                        setRegPin(clean);
                         if (regErrorMsg) setRegErrorMsg('');
                       }}
-                      maxLength={6}
+                      maxLength={4}
                       returnKeyType="next"
                       onSubmitEditing={() => regConfirmPinRef.current?.focus()}
                       onFocus={() => handleFocusField(3)}
@@ -1087,20 +1451,24 @@ export const LoginScreen: React.FC = () => {
                     onPress={() => regConfirmPinRef.current?.focus()}
                   >
                     <AppIcon name="lock-closed-outline" size={17} color="#4b5563" />
+                    <View style={styles.phoneDigitsInline}>
+                      <Text style={styles.phoneDigitsText}>{phoneLast2Digits || '--'}</Text>
+                    </View>
                     <TextInput
                       ref={regConfirmPinRef}
                       style={styles.textInput}
-                      placeholder="Re-enter PIN"
+                      placeholder="Confirm 4-digit code"
                       placeholderTextColor="#9ca3af"
                       keyboardType="numeric"
                       disableFullscreenUI={true}
                       secureTextEntry={!showRegConfirmPin}
                       value={regConfirmPin}
                       onChangeText={(val) => {
-                        setRegConfirmPin(val);
+                        const clean = val.replace(/\D/g, '').slice(0, 4);
+                        setRegConfirmPin(clean);
                         if (regErrorMsg) setRegErrorMsg('');
                       }}
-                      maxLength={6}
+                      maxLength={4}
                       returnKeyType="done"
                       onSubmitEditing={handleRegister}
                       onFocus={() => handleFocusField(4)}
@@ -1119,6 +1487,14 @@ export const LoginScreen: React.FC = () => {
                       />
                     </TouchableOpacity>
                   </TouchableOpacity>
+
+                  {/* Password Composition Helper Hint */}
+                  <View style={styles.passwordHintRow}>
+                    <AppIcon name="information-circle-outline" size={13} color="#0a3d31" style={{ marginRight: 5 }} />
+                    <Text style={styles.passwordHintText}>
+                      Password = <Text style={{ fontWeight: '700', color: '#0a3d31' }}>{phoneLast2Digits || '--'}</Text> (last 2 digits of phone) + <Text style={{ fontWeight: '700', color: '#0a3d31' }}>4 digits</Text> of your wish.
+                    </Text>
+                  </View>
 
                   {/* WhatsApp QR Dispatch Notice */}
                   <View style={styles.waDispatchNotice}>
@@ -1704,6 +2080,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 10,
   },
+  phoneDigitsInline: {
+    paddingLeft: 6,
+    paddingRight: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  phoneDigitsText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0a3d31',
+    letterSpacing: 1.5,
+  },
+  passwordHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(254, 243, 199, 0.55)',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: -4,
+    marginBottom: 10,
+  },
+  passwordHintText: {
+    fontSize: 11,
+    color: '#78350f',
+    flex: 1,
+    lineHeight: 15,
+  },
 
   /* Register Right Column */
   registerRightCol: {
@@ -2064,6 +2470,111 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9ca3af',
     fontWeight: '700',
+  },
+
+  pinHelperText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 6,
+    marginBottom: 14,
+    fontWeight: '400',
+  },
+
+  /* Right Floating Quick-Login & Order Status Widget */
+  sideWidgetContainer: {
+    position: 'absolute',
+    right: 28,
+    top: 15,
+    alignItems: 'flex-end',
+    zIndex: 99,
+  },
+  sideArrowBtn: {
+    alignSelf: 'center',
+    padding: 6,
+    opacity: 0.75,
+  },
+  sideCardsColumn: {
+    gap: 12,
+    marginVertical: 4,
+  },
+  sideItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  statusPill: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    marginRight: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  statusPillText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#1f2937',
+    letterSpacing: -0.2,
+  },
+  sideAvatarWrapper: {
+    position: 'relative',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  sideAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    backgroundColor: '#0a3d31',
+  },
+  statusDot: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  mobileSideWidget: {
+    marginTop: 18,
+    width: '100%',
+    maxWidth: 410,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  mobileSideTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0a3d31',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  mobileSideItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
 
   /* Actions on Login Screen */

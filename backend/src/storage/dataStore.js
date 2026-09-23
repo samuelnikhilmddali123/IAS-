@@ -457,6 +457,21 @@ const dataStore = {
     }
   },
 
+  updateUser(userId, updates = {}) {
+    const users = readJSON(USERS_FILE);
+    const idx = users.findIndex(u => u.id === userId || u.officerId === userId || String(u._id) === userId);
+    if (idx === -1) return null;
+    if (updates.name !== undefined) users[idx].name = String(updates.name).trim();
+    if (updates.avatar !== undefined) users[idx].avatar = String(updates.avatar).trim();
+    if (updates.phone !== undefined) users[idx].phone = String(updates.phone).trim();
+    if (updates.email !== undefined) users[idx].email = String(updates.email).trim().toLowerCase();
+    if (updates.designation !== undefined) users[idx].designation = updates.designation;
+    if (updates.department !== undefined) users[idx].department = updates.department;
+    users[idx].updatedAt = new Date().toISOString();
+    writeJSON(USERS_FILE, users);
+    return users[idx];
+  },
+
   updateUserPhone(userId, newPhone) {
     const users = readJSON(USERS_FILE);
     const idx = users.findIndex(u => u.id === userId || u.officerId === userId || String(u._id) === userId);

@@ -654,6 +654,9 @@ const updateUser = async (id, updates) => {
       );
 
       if (user) {
+        if (dataStore.updateUser) {
+          dataStore.updateUser(id, updates);
+        }
         return {
           id: String(user._id),
           _id: user._id,
@@ -674,6 +677,9 @@ const updateUser = async (id, updates) => {
     }
   }
 
+  if (dataStore.updateUser) {
+    return dataStore.updateUser(id, updates);
+  }
   if (updates.phone) {
     dataStore.updateUserPhone(id, updates.phone);
   }

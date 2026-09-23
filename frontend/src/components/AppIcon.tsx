@@ -17,6 +17,7 @@ export type IconName =
   | 'search-outline'
   | 'options-outline'
   | 'notifications-outline'
+  | 'chevron-up'
   | 'chevron-down'
   | 'chevron-forward'
   | 'arrow-forward'
@@ -165,6 +166,17 @@ export const AppIcon: React.FC<AppIconProps> = ({
           <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
             <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
           </G>
+        );
+      case 'chevron-up':
+        return (
+          <Path
+            d="M18 15l-6-6-6 6"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
         );
       case 'chevron-down':
         return (
@@ -353,6 +365,7 @@ export const AppIcon: React.FC<AppIconProps> = ({
             fill="none"
           />
         );
+      case 'lock-closed':
       case 'lock-closed-outline':
         return (
           <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">

@@ -152,10 +152,37 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// Update User Profile (Self - Name & Profile Picture only)
+router.put('/profile', async (req, res) => {
+  try {
+    const { id, userId, name, avatar } = req.body;
+    const targetId = id || userId;
+    if (!targetId) {
+      return res.status(400).json({ success: false, message: 'User ID is required' });
+    }
+    const user = await getUserById(targetId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Officer not found' });
+    }
+    const updates = {};
+    if (name && name.trim()) updates.name = name.trim();
+    if (avatar && avatar.trim()) updates.avatar = avatar.trim();
+
+    const updated = await updateUser(user.id, updates);
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updated
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Update Officer Phone Number / Profile (Admin Dashboard)
 router.put('/users/:id', async (req, res) => {
   try {
-    const { phone, name, email, designation, department } = req.body;
+    const { phone, name, email, designation, department, avatar } = req.body;
     const user = await getUserById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'Officer not found' });
@@ -166,6 +193,7 @@ router.put('/users/:id', async (req, res) => {
     if (email) updates.email = email;
     if (designation) updates.designation = designation;
     if (department) updates.department = department;
+    if (avatar) updates.avatar = avatar;
 
     const updated = await updateUser(user.id, updates);
     res.status(200).json({

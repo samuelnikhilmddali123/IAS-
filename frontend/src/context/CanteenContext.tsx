@@ -164,9 +164,10 @@ interface CanteenContextType {
   userProfile: UserProfile;
   login: (passwordOrPhone?: string, optionalPin?: string) => Promise<{ success: boolean; error?: string }>;
   registerUser: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (updates: { name?: string; avatar?: string }) => Promise<{ success: boolean; error?: string; user?: any }>;
   qrLogin: (qrPayload: string) => Promise<{ success: boolean; message?: string }>;
   lastDispatchedQr: { qrImage?: string; qrPayload?: string; fromWhatsApp?: string } | null;
-  logout: (notice?: string) => void;
+  logout: (notice?: string, latestCreatedOrder?: BackendOrder) => void;
   logoutNotice: string | null;
   setLogoutNotice: (notice: string | null) => void;
   activeTab: ScreenTab;
@@ -220,6 +221,23 @@ interface CanteenContextType {
     qrDataUrl?: string;
     upiId?: string;
   }>;
+  quickLogin: (session: QuickLoginSession) => Promise<{ success: boolean; error?: string }>;
+}
+
+export interface QuickLoginSession {
+  userId: string;
+  name: string;
+  mobile?: string;
+  avatar?: string;
+  designation?: string;
+  department?: string;
+  officerId?: string;
+  email?: string;
+  token?: string;
+  pin?: string;
+  orderStatus: string;
+  orderId?: string | null;
+  logoutTime: number;
 }
 
 const CanteenContext = createContext<CanteenContextType | undefined>(undefined);
@@ -280,6 +298,13 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     moduleAuthToken = authToken;
   }, [authToken]);
+
+  const userProfileRef = useRef(userProfile);
+  userProfileRef.current = userProfile;
+  const authTokenRef = useRef(authToken);
+  authTokenRef.current = authToken;
+  const orderHistoryRef = useRef(orderHistory);
+  orderHistoryRef.current = orderHistory;
 
   // Fetch Menu from Backend
   const fetchMenu = useCallback(async () => {
@@ -608,8 +633,94 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Logout Handler (Clears all state, tokens, storage, and resets authenticated status)
-  const logout = useCallback((notice?: string) => {
+  // Profile Update Handler (Name & Avatar only)
+  const updateProfile = async (
+    updates: { name?: string; avatar?: string }
+  ): Promise<{ success: boolean; error?: string; user?: any }> => {
+    if (!userProfile.id) {
+      return { success: false, error: 'User is not authenticated' };
+    }
+
+    try {
+      const res = await fetchWithFallback('/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: userProfile.id,
+          name: updates.name,
+          avatar: updates.avatar,
+        }),
+      }, 7000);
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.user) {
+        const u = data.user;
+        setUserProfile((prev) => ({
+          ...prev,
+          name: u.name || prev.name,
+          avatar: u.avatar !== undefined ? u.avatar : prev.avatar,
+        }));
+        return { success: true, user: u };
+      }
+
+      return {
+        success: false,
+        error: data.message || 'Failed to update profile.',
+      };
+    } catch (err: any) {
+      console.error('[AUTH] Update profile error:', err?.message || err);
+      return {
+        success: false,
+        error: 'Unable to connect to backend server. Please verify backend is running.',
+      };
+    }
+  };
+
+  // Logout Handler (Clears all state, tokens, storage, and saves 1-hour quick login record)
+  const logout = useCallback((notice?: string, latestCreatedOrder?: BackendOrder) => {
+    const currentUser = userProfileRef.current;
+    const currentToken = authTokenRef.current;
+    const currentOrders = orderHistoryRef.current;
+
+    // Save recent logout session (TTL: 1 hour)
+    if (currentUser && (currentUser.id || currentUser.name)) {
+      try {
+        const latestOrder = latestCreatedOrder || (currentOrders && currentOrders.length > 0 ? currentOrders[0] : null);
+        let initialStatus = 'NO_ORDERS';
+        if (latestOrder) {
+          initialStatus = latestOrder.kitchenStatus || latestOrder.status || 'PREPARING';
+          if (initialStatus === 'NEW') initialStatus = 'PREPARING';
+        }
+
+        const sessionRecord: QuickLoginSession = {
+          userId: currentUser.id || 'officer',
+          name: currentUser.name,
+          mobile: currentUser.mobile,
+          avatar: currentUser.avatar,
+          designation: currentUser.designation,
+          department: currentUser.department,
+          officerId: currentUser.officerId,
+          email: currentUser.email,
+          token: currentToken,
+          orderStatus: initialStatus,
+          orderId: latestOrder ? (latestOrder.id || (latestOrder as any)._id) : null,
+          logoutTime: Date.now(),
+        };
+
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          const existingRaw = localStorage.getItem('canteen_recent_logouts');
+          let list: QuickLoginSession[] = existingRaw ? JSON.parse(existingRaw) : [];
+          const oneHourAgo = Date.now() - 3600000;
+          // Filter out expired (> 1 hr) and duplicate of current user
+          list = list.filter((item) => item.userId !== currentUser.id && item.logoutTime > oneHourAgo);
+          list.unshift(sessionRecord);
+          localStorage.setItem('canteen_recent_logouts', JSON.stringify(list.slice(0, 8)));
+        }
+      } catch (err) {
+        console.warn('Error saving logout session for quick-login:', err);
+      }
+    }
+
     moduleAuthToken = '';
     setAuthToken('');
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
@@ -643,6 +754,39 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setLogoutNotice(notice);
     }
   }, []);
+
+  // Quick Login Handler for 1-hour Recent Logged-out Officers
+  const quickLogin = async (session: QuickLoginSession): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const tok = session.token || '';
+      if (tok) {
+        setAuthToken(tok);
+        moduleAuthToken = tok;
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.setItem('canteen_jwt_token', tok);
+        }
+      }
+
+      setUserProfile({
+        name: session.name,
+        mobile: session.mobile || '',
+        designation: session.designation || 'Officer on Special Duty',
+        department: session.department || 'Cabinet Secretariat • Government of India',
+        id: session.userId,
+        officerId: session.officerId || '',
+        avatar: session.avatar || '',
+        email: session.email || '',
+      });
+
+      setIsAuthenticated(true);
+      setTimeout(() => {
+        fetchOrderHistory();
+      }, 50);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Quick login failed' };
+    }
+  };
 
   const addToCart = (item: MenuItem) => {
     setCart((prev) => {
@@ -741,6 +885,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (res.ok && data.success && data.order) {
         setLastPlacedOrder(data.order);
         setOrderHistory((prev) => [data.order, ...prev]);
+        orderHistoryRef.current = [data.order, ...orderHistoryRef.current];
         return {
           success: true,
           message: data.message || 'Order sent to kitchen successfully.',
@@ -808,6 +953,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (data.order) {
           setLastPlacedOrder(data.order);
           setOrderHistory((prev) => [data.order, ...prev]);
+          orderHistoryRef.current = [data.order, ...orderHistoryRef.current];
         }
         return {
           success: true,
@@ -909,7 +1055,9 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         userProfile,
         login,
         registerUser,
+        updateProfile,
         qrLogin,
+        quickLogin,
         lastDispatchedQr,
         logout,
         logoutNotice,

@@ -46,35 +46,43 @@ export const OrdersScreen: React.FC = () => {
   const [successOrder, setSuccessOrder] = React.useState<BackendOrder | null>(null);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = React.useState<boolean>(false);
   const [successActionType, setSuccessActionType] = React.useState<'checkout' | 'bill'>('checkout');
-  const [countdown, setCountdown] = React.useState<number>(4);
+  const [countdown, setCountdown] = React.useState<number>(3);
+
+  // References to guarantee single-execution and access latest state
+  const successOrderRef = React.useRef<BackendOrder | null>(null);
+  successOrderRef.current = successOrder;
+  const hasLoggedOutRef = React.useRef<boolean>(false);
 
   const handleOrderDoneAndLogout = React.useCallback(() => {
+    if (hasLoggedOutRef.current) return;
+    hasLoggedOutRef.current = true;
+
     setIsSuccessModalOpen(false);
     clearCart();
-    const orderNum = successOrder?.orderNumber ? `Order #${successOrder.orderNumber}` : 'Order';
-    const tokenStr = successOrder?.tokenNumber ? ` (Token #${successOrder.tokenNumber})` : '';
-    logout(`✓ ${orderNum}${tokenStr} submitted and is directly PREPARING in the kitchen.`);
-  }, [clearCart, logout, successOrder]);
 
+    const order = successOrderRef.current;
+    const orderNum = order?.orderNumber ? `Order #${order.orderNumber}` : 'Order';
+    const tokenStr = order?.tokenNumber ? ` (Token #${order.tokenNumber})` : '';
+    logout(`✓ ${orderNum}${tokenStr} submitted and is directly PREPARING in the kitchen.`, order || undefined);
+  }, [clearCart, logout]);
+
+  // Clean countdown effect without side-effects in state updaters
   React.useEffect(() => {
-    let interval: any;
-    if (isSuccessModalOpen) {
-      setCountdown(4);
-      interval = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            handleOrderDoneAndLogout();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+    if (!isSuccessModalOpen) {
+      return;
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isSuccessModalOpen, handleOrderDoneAndLogout]);
+
+    if (countdown <= 0) {
+      handleOrderDoneAndLogout();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCountdown((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [isSuccessModalOpen, countdown, handleOrderDoneAndLogout]);
 
   // ==========================================
   // ACTION 1: CHECKOUT HANDLER
@@ -92,8 +100,11 @@ export const OrdersScreen: React.FC = () => {
     try {
       const result = await checkoutCart();
       if (result.success) {
+        hasLoggedOutRef.current = false;
+        successOrderRef.current = result.order || null;
         setSuccessOrder(result.order || null);
         setSuccessActionType('checkout');
+        setCountdown(3);
         setIsSuccessModalOpen(true);
       } else {
         setErrorMessage(result.error || 'Failed to send order to kitchen. Please try again.');
@@ -122,8 +133,11 @@ export const OrdersScreen: React.FC = () => {
     try {
       const result = await generateBillCart();
       if (result.success) {
+        hasLoggedOutRef.current = false;
+        successOrderRef.current = result.order || null;
         setSuccessOrder(result.order || null);
         setSuccessActionType('bill');
+        setCountdown(3);
         setIsSuccessModalOpen(true);
       } else {
         setErrorMessage(result.error || 'Failed to generate and send bill. Please try again.');
