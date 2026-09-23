@@ -38,34 +38,52 @@ const DEFAULT_SUGGESTED_OFFICERS: OfficerPhotoItem[] = [
     id: '1',
     name: 'Smita Sabharwal',
     role: '(IAS)',
-    img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTLRqk4ux2gWHnzvmXoA8l8S-ZtoMNwVPDtaLDm5O8meQ&s=10',
+    img: 'https://ts4.mm.bing.net/th?id=OIP.SIM9STETOVZc4cn6jEF4BgHaEc&pid=15.1',
   },
   {
     id: '2',
-    name: 'T.V. Somanathan',
+    name: 'Tina Dabi',
     role: '(IAS)',
-    img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSVlkFVlt9x8g2GeISxmJzb-s3peGmjsRRx4AJLojO7mw&s',
+    img: 'https://ts4.mm.bing.net/th?id=OIP.Ux2okdnRi4pJa08yMeYZLQHaEK&pid=15.1',
   },
   {
     id: '3',
-    name: 'Arvind Kumar',
+    name: 'T.V. Somanathan',
     role: '(IAS)',
-    img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT0kE1HgZwkxwL3ahmoTU_MxQHoHv94i0EGLGG2cCcXHA&s=10',
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/T._V._Somanathan.jpg/500px-T._V._Somanathan.jpg',
   },
   {
     id: '4',
-    name: 'Durga Shakti Nagpal',
+    name: 'Dr. Vivek Agnihotri',
     role: '(IAS)',
-    img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRzJKOcknC_EC9KWiQwYoHi-GX6qTCJ9vbZsuvd0xlVDQ&s=10',
+    img: 'https://ts3.mm.bing.net/th?id=OIP.NLtv5k9i-RD2JpCfDZ6pSAAAAA&pid=15.1',
   },
   {
     id: '5',
-    name: 'Awanish Sharan',
+    name: 'Arvind Kumar',
     role: '(IAS)',
-    img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSQmK2RKNQqwZob30aXyIcJ46e60Kn0uThCfTQAfnXmuw&s=10',
+    img: 'https://ts1.mm.bing.net/th?id=OIP.bYqP963s9Jg7vP3yYhL6XwHaEK&pid=15.1',
   },
   {
     id: '6',
+    name: 'Durga Shakti Nagpal',
+    role: '(IAS)',
+    img: 'https://ts3.mm.bing.net/th?id=OIP.qWdoZX1Ugfyx8KzpfwRiMAHaEK&pid=15.1',
+  },
+  {
+    id: '7',
+    name: 'Awanish Sharan',
+    role: '(IAS)',
+    img: 'https://ts3.mm.bing.net/th?id=OIP.2On8XPbGsWEK5TiHLUrk_gHaE_&pid=15.1',
+  },
+  {
+    id: '8',
+    name: 'Suhas L.Y.',
+    role: '(IAS)',
+    img: 'https://ts2.mm.bing.net/th?id=OIP.ur3Rbvx1NTrEkFkfmtMkPAHaEK&pid=15.1',
+  },
+  {
+    id: '9',
     name: 'Srinivas Katikithala',
     role: '(IAS)',
     img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQpIVryRt0bhJwXFG2pX-iK_SWfHLKG8rCFgX9O7vuEVQ&s=10',
@@ -74,7 +92,7 @@ const DEFAULT_SUGGESTED_OFFICERS: OfficerPhotoItem[] = [
 
 export const LoginScreen: React.FC = () => {
   const { width, height } = useWindowDimensions();
-  const { login, registerUser, qrLogin } = useCanteen();
+  const { login, registerUser, qrLogin, logoutNotice, setLogoutNotice } = useCanteen();
 
   // Mode: 'login' | 'register' | 'qr'
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'qr'>('login');
@@ -116,7 +134,7 @@ export const LoginScreen: React.FC = () => {
   // Officer Photos State
   const [officerPhotos, setOfficerPhotos] = useState<OfficerPhotoItem[]>(DEFAULT_SUGGESTED_OFFICERS);
   const [selectedPhoto, setSelectedPhoto] = useState<string>(
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80'
+    DEFAULT_SUGGESTED_OFFICERS[0].img
   );
   const [isSearchingPhotos, setIsSearchingPhotos] = useState<boolean>(false);
   const [showMorePhotos, setShowMorePhotos] = useState<boolean>(false);
@@ -389,7 +407,49 @@ export const LoginScreen: React.FC = () => {
     };
   }, [stopLiveCamera]);
 
-  // Search Google Images dynamically when the officer name is entered
+  // Search Google/Web Images dynamically when the officer name is entered
+  const fetchOfficerPhotos = useCallback(async (nameQuery: string) => {
+    const trimmed = (nameQuery || '').trim();
+    if (!trimmed) {
+      setOfficerPhotos(DEFAULT_SUGGESTED_OFFICERS);
+      return;
+    }
+
+    if (trimmed.length < 2) {
+      return;
+    }
+
+    setIsSearchingPhotos(true);
+    const enc = encodeURIComponent(trimmed);
+
+    try {
+      const res = await fetchWithFallback(`/search-officer?name=${enc}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      }, 8000);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.images) && data.images.length > 0) {
+          const mapped: OfficerPhotoItem[] = data.images.map((item: any, idx: number) => ({
+            id: item.id || `photo-${idx}`,
+            name: item.title ? (item.title.length > 32 ? item.title.slice(0, 32) + '...' : item.title) : `${trimmed} (IAS)`,
+            role: item.source ? `(${item.source.slice(0, 20)})` : '(IAS)',
+            img: item.thumbnail || item.original,
+          }));
+          setOfficerPhotos(mapped);
+          if (mapped[0]?.img) {
+            setSelectedPhoto(mapped[0].img);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Officer search error:', e);
+    } finally {
+      setIsSearchingPhotos(false);
+    }
+  }, []);
+
   useEffect(() => {
     const trimmed = regFullName.trim();
     if (!trimmed) {
@@ -401,38 +461,12 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setIsSearchingPhotos(true);
-      const enc = encodeURIComponent(trimmed);
-
-      try {
-        const res = await fetchWithFallback(`/search-officer?name=${enc}`, {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        }, 4000);
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.images) && data.images.length > 0) {
-            const mapped: OfficerPhotoItem[] = data.images.map((item: any, idx: number) => ({
-              id: item.id || `google-${idx}`,
-              name: trimmed,
-              role: item.source ? `(${item.source})` : '(IAS)',
-              img: item.thumbnail || item.original,
-            }));
-            setOfficerPhotos(mapped);
-            if (mapped[0]?.img) setSelectedPhoto(mapped[0].img);
-          }
-        }
-      } catch {
-        // Officer search unavailable or offline
-      }
-
-      setIsSearchingPhotos(false);
-    }, 350);
+    const timer = setTimeout(() => {
+      fetchOfficerPhotos(trimmed);
+    }, 400);
 
     return () => clearTimeout(timer);
-  }, [regFullName]);
+  }, [regFullName, fetchOfficerPhotos]);
 
   const handleLogin = async () => {
     if (!pin.trim()) {
@@ -581,6 +615,16 @@ export const LoginScreen: React.FC = () => {
               <View style={styles.qrCard}>
                 <Text style={styles.qrCardHeading}>Already Registered?</Text>
                 <Text style={styles.qrCardSubheading}>Scan your QR to continue</Text>
+
+                {logoutNotice ? (
+                  <View style={styles.logoutSuccessBanner}>
+                    <AppIcon name="checkmark-circle" size={16} color="#15803d" style={{ marginRight: 6 }} />
+                    <Text style={styles.logoutSuccessBannerText}>{logoutNotice}</Text>
+                    <TouchableOpacity onPress={() => setLogoutNotice(null)} style={{ padding: 4 }}>
+                      <AppIcon name="close" size={14} color="#15803d" />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
 
                 {/* Viewfinder Frame with 4 Green Corners */}
                 <View style={styles.qrViewfinderWrapper}>
@@ -747,6 +791,16 @@ export const LoginScreen: React.FC = () => {
               <View style={styles.loginCard}>
                 <Text style={styles.cardHeading}>LOGIN</Text>
                 <Text style={styles.cardSubheading}>Enter your unique password to continue</Text>
+
+                {logoutNotice ? (
+                  <View style={styles.logoutSuccessBanner}>
+                    <AppIcon name="checkmark-circle" size={16} color="#15803d" style={{ marginRight: 6 }} />
+                    <Text style={styles.logoutSuccessBannerText}>{logoutNotice}</Text>
+                    <TouchableOpacity onPress={() => setLogoutNotice(null)} style={{ padding: 4 }}>
+                      <AppIcon name="close" size={14} color="#15803d" />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
 
                 {errorMsg ? (
                   <View style={styles.errorContainer}>
@@ -1085,20 +1139,30 @@ export const LoginScreen: React.FC = () => {
                   </Text>
                 </View>
 
-                {/* Right Side: Dynamic Photos or Ashoka Emblem */}
-                {isWideScreen ? (
-                  <View style={styles.registerRightCol}>
+                {/* Right Side / Responsive: Dynamic Photos or Ashoka Emblem */}
+                {isWideScreen || regFullName.trim() ? (
+                  <View style={[styles.registerRightCol, !isWideScreen && styles.registerRightColStacked]}>
                     {/* When Full Name is entered -> Emblem disappears and Photos appear! */}
                     {regFullName.trim() ? (
                       <View style={styles.photoPickerContainer}>
                         {/* Header */}
                         <View style={styles.choosePhotoHeader}>
-                          <Text style={styles.choosePhotoTitle}>Choose Your Profile Photo</Text>
+                          <View style={styles.choosePhotoHeaderRow}>
+                            <Text style={styles.choosePhotoTitle}>Choose Your Profile Photo</Text>
+                            <TouchableOpacity
+                              style={styles.refreshPhotoBtn}
+                              onPress={() => fetchOfficerPhotos(regFullName)}
+                              disabled={isSearchingPhotos}
+                              activeOpacity={0.7}
+                            >
+                              <AppIcon name="refresh-outline" size={16} color="#0a3d31" />
+                            </TouchableOpacity>
+                          </View>
                           <Text style={styles.choosePhotoSubtitle}>
                             {isSearchingPhotos
-                              ? `Searching Google Images for ${regFullName}...`
+                              ? `Searching official photos for ${regFullName}...`
                               : officerPhotos !== DEFAULT_SUGGESTED_OFFICERS
-                              ? `Official Google Images for ${regFullName}`
+                              ? `Official Photos for ${regFullName}`
                               : 'Select from suggested IAS officers'}
                           </Text>
                         </View>
@@ -1127,7 +1191,7 @@ export const LoginScreen: React.FC = () => {
                         {isSearchingPhotos ? (
                           <View style={styles.searchingLoadingRow}>
                             <ActivityIndicator size="small" color="#0a3d31" />
-                            <Text style={styles.searchingText}>Finding official Google Images...</Text>
+                            <Text style={styles.searchingText}>Finding official officer photos...</Text>
                           </View>
                         ) : null}
 
@@ -1616,6 +1680,15 @@ const styles = StyleSheet.create({
     paddingLeft: 20,
     minHeight: 330,
   },
+  registerRightColStacked: {
+    paddingLeft: 0,
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    width: '100%',
+    minHeight: 'auto',
+  },
 
   /* Empty State Emblem */
   emblemContainerRight: {
@@ -1645,6 +1718,20 @@ const styles = StyleSheet.create({
   choosePhotoHeader: {
     alignItems: 'center',
     marginBottom: 10,
+    width: '100%',
+  },
+  choosePhotoHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  refreshPhotoBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
   },
   choosePhotoTitle: {
     fontSize: 15,
@@ -2370,6 +2457,25 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#15803d',
     fontWeight: '600',
+  },
+  logoutSuccessBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#86efac',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 14,
+    marginTop: 4,
+  },
+  logoutSuccessBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#15803d',
+    fontWeight: '600',
+    lineHeight: 16,
   },
   qrErrorBanner: {
     flexDirection: 'row',

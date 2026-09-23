@@ -50,55 +50,22 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// SerpApi Google Images search proxy
-function fetchSerpApiGoogleImages(query) {
-  return new Promise((resolve, reject) => {
-    const apiUrl =
-      'https://serpapi.com/search.json?engine=google_images&q=' +
-      encodeURIComponent(query + ' IAS officer') +
-      '&api_key=' +
-      SERPAPI_KEY +
-      '&num=10';
-
-    https
-      .get(apiUrl, (res) => {
-        let data = '';
-        res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            resolve(json.images_results || []);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      })
-      .on('error', reject);
-  });
-}
+// Robust multi-source image search (SerpApi + Live Web Search + Wikimedia + Curated Directory)
+const { searchOfficerImages } = require('./src/services/officerImageService');
 
 const handleOfficerSearch = async (req, res) => {
-  const name = (req.query.name || req.body.name || '').trim();
+  const name = (req.query?.name || req.body?.name || '').trim();
+  const type = (req.query?.type || req.body?.type || '').trim();
   if (!name) {
     return res.status(400).json({ success: false, message: 'Officer name is required' });
   }
 
   try {
-    const rawImages = await fetchSerpApiGoogleImages(name);
-    const results = rawImages.slice(0, 10).map((img, idx) => ({
-      id: `google-img-${idx}`,
-      thumbnail: img.thumbnail,
-      original: img.original,
-      title: img.title || `${name} (IAS)`,
-      source: img.source || 'Google Images',
-      link: img.link,
-    }));
-
-    res.json({
-      success: true,
-      name,
-      images: results,
+    const searchRes = await searchOfficerImages(name, {
+      type,
+      apiKey: SERPAPI_KEY
     });
+    res.json(searchRes);
   } catch (error) {
     console.error('Error fetching officer photos:', error.message);
     res.status(500).json({
