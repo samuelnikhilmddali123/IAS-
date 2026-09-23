@@ -64,8 +64,8 @@ app.get('/admin/bundle.js', (req, res) => {
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Robust multi-source image search (SerpApi + Live Web Search + Wikimedia + Curated Directory)
-const { searchOfficerImages } = require('./src/services/officerImageService');
+// Robust multi-source image search (Live Web Search + Wikimedia + Curated Directory + Circuit-breaker)
+const { searchOfficerImages, proxyImageStream } = require('./src/services/officerImageService');
 
 const handleOfficerSearch = async (req, res) => {
   const name = (req.query?.name || req.body?.name || '').trim();
@@ -92,6 +92,17 @@ const handleOfficerSearch = async (req, res) => {
 
 app.get('/search-officer', handleOfficerSearch);
 app.post('/search-officer', handleOfficerSearch);
+app.get('/api/search-officer', handleOfficerSearch);
+app.post('/api/search-officer', handleOfficerSearch);
+
+// Safe image proxy endpoint for cross-origin or referrer-restricted officer portraits
+app.get('/api/image-proxy', (req, res) => {
+  const imgUrl = req.query?.url;
+  if (!imgUrl) {
+    return res.status(400).json({ error: 'Missing image URL' });
+  }
+  proxyImageStream(imgUrl, res);
+});
 
 // API Routes
 app.use('/api/auth', authRoutes);

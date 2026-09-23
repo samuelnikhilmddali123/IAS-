@@ -50,7 +50,7 @@ export const ProfileScreen: React.FC = () => {
             <Text style={styles.backBtnText}>Back to Menu</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+          <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()}>
             <AppIcon name="log-out-outline" size={16} color="#dc2626" style={{ marginRight: 6 }} />
             <Text style={styles.logoutBtnText}>Sign Out</Text>
           </TouchableOpacity>

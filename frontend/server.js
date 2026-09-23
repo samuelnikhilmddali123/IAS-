@@ -3,7 +3,7 @@ const https = require('https');
 const url = require('url');
 
 const PORT = process.env.PORT || 3000;
-const SERPAPI_KEY = process.env.SERPAPI_KEY || '2d8c514adc81802ac3aeb0339ae905060021acc30a101f2177316f2bae88e950';
+const SERPAPI_KEY = process.env.SERPAPI_KEY;
 
 let officerImageService = null;
 try {
@@ -27,7 +27,7 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
 
   // Search officer endpoint (supports GET ?name=... and POST { name: ... })
-  if (parsedUrl.pathname === '/search-officer') {
+  if (parsedUrl.pathname === '/search-officer' || parsedUrl.pathname === '/api/search-officer') {
     let name = parsedUrl.query.name;
 
     if (req.method === 'POST') {
@@ -51,10 +51,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Image Proxy endpoint
+  if (parsedUrl.pathname === '/api/image-proxy') {
+    const targetUrl = parsedUrl.query.url;
+    if (officerImageService && officerImageService.proxyImageStream) {
+      officerImageService.proxyImageStream(targetUrl, res);
+    } else {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Proxy not available' }));
+    }
+    return;
+  }
+
   // Health check endpoint
   if (parsedUrl.pathname === '/health' || parsedUrl.pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', service: 'IAS Officer Search API' }));
+    res.end(JSON.stringify({ status: 'ok', service: 'IAS Officer Search API (Unlimited Permanent Engine)' }));
     return;
   }
 

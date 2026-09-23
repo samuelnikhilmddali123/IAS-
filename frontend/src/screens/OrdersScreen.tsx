@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { AppIcon } from '../components/AppIcon';
 import { useCanteen, ActionSuccessInfo } from '../context/CanteenContext';
+import { BackendOrder } from '../types';
 
 const PRE_ORDER_TIMES = ['1:00 PM', '2:30 PM', '6:00 PM', '7:30 PM', '8:30 PM'];
 

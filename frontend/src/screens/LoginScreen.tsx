@@ -24,8 +24,6 @@ import { useCanteen, fetchWithFallback } from '../context/CanteenContext';
 const BACKGROUND_IMG = require('../../assets/BG.png');
 const EMBLEM_IMG = require('../../assets/6a72e4e7-5e3f-43cb-bd57-bac2a1fcb7f4.png');
 
-const SERPAPI_KEY = '2d8c514adc81802ac3aeb0339ae905060021acc30a101f2177316f2bae88e950';
-
 interface OfficerPhotoItem {
   id: string;
   name: string;
@@ -50,19 +48,19 @@ const DEFAULT_SUGGESTED_OFFICERS: OfficerPhotoItem[] = [
     id: '3',
     name: 'T.V. Somanathan',
     role: '(IAS)',
-    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/T._V._Somanathan.jpg/500px-T._V._Somanathan.jpg',
+    img: 'https://ts2.mm.bing.net/th?id=OIP.kYctGNXiJA1Ml6QA5xsReAHaEK&pid=15.1',
   },
   {
     id: '4',
-    name: 'Dr. Vivek Agnihotri',
+    name: 'Sreedhanya Suresh',
     role: '(IAS)',
-    img: 'https://ts3.mm.bing.net/th?id=OIP.NLtv5k9i-RD2JpCfDZ6pSAAAAA&pid=15.1',
+    img: 'https://ts4.mm.bing.net/th?id=OIP.KCP3AQPPHoHmXWVsVEm2qQHaJ4&pid=15.1',
   },
   {
     id: '5',
     name: 'Arvind Kumar',
     role: '(IAS)',
-    img: 'https://ts1.mm.bing.net/th?id=OIP.bYqP963s9Jg7vP3yYhL6XwHaEK&pid=15.1',
+    img: 'https://ts3.mm.bing.net/th?id=OIP.mPqs5Cuudd4vxjxkeidN4wAAAA&pid=15.1',
   },
   {
     id: '6',
@@ -84,9 +82,15 @@ const DEFAULT_SUGGESTED_OFFICERS: OfficerPhotoItem[] = [
   },
   {
     id: '9',
-    name: 'Srinivas Katikithala',
+    name: 'Armstrong Pame',
     role: '(IAS)',
-    img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQpIVryRt0bhJwXFG2pX-iK_SWfHLKG8rCFgX9O7vuEVQ&s=10',
+    img: 'https://ts3.mm.bing.net/th?id=OIP._lzOMLDyfu6GEKUi__ylYgHaEq&pid=15.1',
+  },
+  {
+    id: '10',
+    name: 'Ashok Khemka',
+    role: '(IAS)',
+    img: 'https://ts3.mm.bing.net/th?id=OIP.oZw6-nUEAzW6EgctetgeHQHaFe&pid=15.1',
   },
 ];
 
@@ -138,6 +142,24 @@ export const LoginScreen: React.FC = () => {
   );
   const [isSearchingPhotos, setIsSearchingPhotos] = useState<boolean>(false);
   const [showMorePhotos, setShowMorePhotos] = useState<boolean>(false);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+
+  const handleImageError = useCallback((url: string) => {
+    if (!url) return;
+    setFailedImages((prev) => ({ ...prev, [url]: true }));
+  }, []);
+
+  const getFallbackAvatar = useCallback((name: string) => {
+    const clean = (name || 'IAS').trim().replace(/[^a-zA-Z\s]/g, '');
+    const parts = clean.split(/\s+/).filter(Boolean);
+    let initials = 'IAS';
+    if (parts.length === 1) {
+      initials = parts[0].slice(0, 2).toUpperCase();
+    } else if (parts.length >= 2) {
+      initials = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&background=0a3d31&color=d4af37&size=256&bold=true&format=png`;
+  }, []);
 
   // Modals
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
@@ -437,6 +459,7 @@ export const LoginScreen: React.FC = () => {
             role: item.source ? `(${item.source.slice(0, 20)})` : '(IAS)',
             img: item.thumbnail || item.original,
           }));
+          setFailedImages({});
           setOfficerPhotos(mapped);
           if (mapped[0]?.img) {
             setSelectedPhoto(mapped[0].img);
@@ -1170,8 +1193,13 @@ export const LoginScreen: React.FC = () => {
                         {/* Large Selected Profile Circular Image with Green Checkmark */}
                         <View style={styles.selectedPhotoWrapper}>
                           <Image
-                            source={{ uri: selectedPhoto }}
+                            source={{
+                              uri: failedImages[selectedPhoto]
+                                ? getFallbackAvatar(regFullName || 'IAS')
+                                : selectedPhoto,
+                            }}
                             style={styles.selectedPhotoCircle}
+                            onError={() => handleImageError(selectedPhoto)}
                           />
                           <View style={styles.checkmarkBadge}>
                             <Svg width={12} height={12} viewBox="0 0 24 24">
@@ -1209,11 +1237,16 @@ export const LoginScreen: React.FC = () => {
                                 }}
                               >
                                 <Image
-                                  source={{ uri: officer.img }}
+                                  source={{
+                                    uri: failedImages[officer.img]
+                                      ? getFallbackAvatar(officer.name)
+                                      : officer.img,
+                                  }}
                                   style={[
                                     styles.officerThumbCircle,
                                     isSelected && styles.officerThumbSelected,
                                   ]}
+                                  onError={() => handleImageError(officer.img)}
                                 />
                                 <Text
                                   style={[
