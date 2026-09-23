@@ -1,0 +1,3 @@
+@echo off
+echo Starting KOT Dashboard with Silent Background Printing...
+start chrome --kiosk-printing --app="http://localhost:5001/admin/kot/"
