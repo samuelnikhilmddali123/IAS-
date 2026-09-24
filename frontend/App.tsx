@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, View, SafeAreaView, Platform } from 'react-native';
+import { StyleSheet, View, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { useLandscapeOrientation } from './src/hooks/useLandscapeOrientation';
 import { PortraitPrompt } from './src/components/PortraitPrompt';
@@ -61,13 +62,17 @@ function AppContent(): React.JSX.Element {
     return <PortraitPrompt onRequestFullscreen={requestFullscreenLandscape} />;
   }
 
-  // If not logged in, render LoginScreen edge-to-edge without SafeAreaView insets
+  // If not logged in, render LoginScreen with safe area handling
   if (!isAuthenticated) {
-    return <LoginScreen />;
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+        <LoginScreen />
+      </SafeAreaView>
+    );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
       <MainLandscapeApp />
     </SafeAreaView>
   );
@@ -84,9 +89,11 @@ function MainAppShell(): React.JSX.Element {
 
 export default function App(): React.JSX.Element {
   return (
-    <CanteenProvider>
-      <MainAppShell />
-    </CanteenProvider>
+    <SafeAreaProvider>
+      <CanteenProvider>
+        <MainAppShell />
+      </CanteenProvider>
+    </SafeAreaProvider>
   );
 }
 
