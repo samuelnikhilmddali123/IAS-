@@ -241,7 +241,34 @@ function printOrderBackend(order) {
   }
 }
 
+function printUserPaidBill(userBillData) {
+  try {
+    const renderPsScript = path.join(__dirname, 'RenderAndPrintUserBill.ps1');
+    const tempBillJson = path.join(__dirname, '..', '..', 'temp_user_bill_print.json');
+    fs.writeFileSync(tempBillJson, JSON.stringify(userBillData, null, 2), 'utf8');
+
+    const psCommand = `powershell.exe -ExecutionPolicy Bypass -File "${renderPsScript}" -PrinterName "POS-80C" -BillJsonPath "${tempBillJson}"`;
+    
+    console.log('[PRINTER] Rendering and sending Exact User Paid Invoice to POS-80C...');
+    
+    exec(psCommand, (error, stdout, stderr) => {
+      if (error) {
+        console.warn(`[PRINTER USER INVOICE WARNING]: ${error.message}`);
+      } else {
+        console.log(`[PRINTER USER INVOICE SUCCESS]: ${stdout ? stdout.trim() : 'SUCCESS'}`);
+      }
+      
+      setTimeout(() => {
+        if (fs.existsSync(tempBillJson)) fs.unlinkSync(tempBillJson);
+      }, 5000);
+    });
+  } catch (err) {
+    console.error('[PRINTER USER INVOICE CATCH ERROR]', err);
+  }
+}
+
 module.exports = {
   printOrderBackend,
+  printUserPaidBill,
   generateReceiptBuffer
 };

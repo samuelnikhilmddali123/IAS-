@@ -22,12 +22,21 @@ export const CartSidebar: React.FC = () => {
     orderNote,
     setOrderNote,
     setActiveTab,
-    setOrderStep,
+    checkoutCart,
   } = useCanteen();
 
-  const handleCheckout = () => {
-    setActiveTab('cart');
-    setOrderStep(1);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  const handleCheckout = async () => {
+    if (cart.length === 0 || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await checkoutCart();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -142,24 +151,18 @@ export const CartSidebar: React.FC = () => {
             </View>
           </View>
 
-          {/* Two Main Cart CTAs */}
+          {/* Single Direct Checkout Button */}
           <View style={styles.actionButtonsCol}>
             <TouchableOpacity
-              style={styles.checkoutBtn}
-              onPress={() => setActiveTab('cart')}
+              style={[styles.checkoutBtn, isSubmitting && { opacity: 0.7 }]}
+              onPress={handleCheckout}
+              disabled={isSubmitting}
               activeOpacity={0.85}
             >
-              <AppIcon name="restaurant" size={14} color="#ffffff" style={{ marginRight: 6 }} />
-              <Text style={styles.checkoutBtnText}>CHECKOUT</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.generateBillBtn}
-              onPress={() => setActiveTab('cart')}
-              activeOpacity={0.85}
-            >
-              <AppIcon name="receipt-outline" size={14} color="#0c3527" style={{ marginRight: 6 }} />
-              <Text style={styles.generateBillBtnText}>GENERATE BILL</Text>
+              <AppIcon name="restaurant" size={15} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.checkoutBtnText}>
+                {isSubmitting ? 'SENDING TO KITCHEN...' : 'CHECKOUT'}
+              </Text>
             </TouchableOpacity>
           </View>
 

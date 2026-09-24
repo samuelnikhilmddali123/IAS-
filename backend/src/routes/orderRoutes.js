@@ -219,6 +219,103 @@ router.put('/:id/payment-status', handlePaymentStatusUpdate);
 router.patch('/admin/:id/payment-status', handlePaymentStatusUpdate);
 router.patch('/:id/payment-status', handlePaymentStatusUpdate);
 
+// Helper: Trigger User Paid Invoice Print & WhatsApp Message
+async function handlePostPaymentActions(orders, user) {
+  try {
+    const printerService = require('../utils/printerService');
+    const whatsappService = require('../services/whatsappService');
+    const authService = require('../services/authService');
+
+    let dbUser = user;
+    if (user?.id) {
+      const fetched = await authService.getUserById(user.id);
+      if (fetched) dbUser = fetched;
+    }
+
+    const userName = dbUser?.name || orders[0]?.userName || 'IAS Officer';
+    const userPhone = (dbUser?.phone || dbUser?.mobile || orders[0]?.userPhone || '').trim();
+
+    // Consolidate items
+    const itemMap = new Map();
+    let totalPaid = 0;
+
+    orders.forEach(ord => {
+      totalPaid += Number(ord.totalAmount || ord.grandTotal || ord.subtotal || 0);
+      (ord.items || []).forEach(item => {
+        const name = item.name || 'Food item';
+        const qty = Number(item.quantity || item.qty || 1);
+        const price = Number(item.price || 0);
+        if (itemMap.has(name)) {
+          const existing = itemMap.get(name);
+          existing.qty += qty;
+          existing.total += qty * price;
+        } else {
+          itemMap.set(name, {
+            name,
+            qty,
+            price,
+            total: qty * price
+          });
+        }
+      });
+    });
+
+    const consolidatedItems = Array.from(itemMap.values()).map((it, idx) => ({
+      id: idx + 1,
+      name: it.name,
+      qty: it.qty,
+      price: it.price,
+      total: it.total
+    }));
+
+    const now = new Date();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const dateStr = `${now.getDate().toString().padStart(2, '0')} ${months[now.getMonth()]} ${now.getFullYear()}`;
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const designation = dbUser?.designation || 'IAS Officer • Special Duty';
+    const department = dbUser?.department || 'Cabinet Secretariat • Government of India';
+
+    const userBillData = {
+      invoiceNo: `INV-${Date.now().toString().slice(-6)}`,
+      userName,
+      designation,
+      department,
+      userPhone,
+      date: dateStr,
+      time: timeStr,
+      paymentStatus: 'PAID',
+      paymentMethod: 'Online UPI',
+      totalAmount: totalPaid,
+      items: consolidatedItems
+    };
+
+    // 1. Immediately print User Paid Invoice to Thermal Printer (POS-80C)
+    if (printerService.printUserPaidBill) {
+      printerService.printUserPaidBill(userBillData);
+    }
+
+    // 2. Dispatch Official Paid Invoice PDF directly to user on WhatsApp
+    if (userPhone && whatsappService) {
+      try {
+        if (whatsappService.sendPaidInvoicePdf) {
+          await whatsappService.sendPaidInvoicePdf({
+            to: userPhone,
+            userName,
+            billData: userBillData
+          });
+        } else if (whatsappService.sendMessage) {
+          await whatsappService.sendMessage(userPhone, `Payment of Rs.${totalPaid} verified for ${userName}.`);
+        }
+      } catch (waErr) {
+        console.warn('[WHATSAPP PAID BILL WARNING]', waErr.message);
+      }
+    }
+  } catch (err) {
+    console.error('[POST PAYMENT ERROR]', err);
+  }
+}
+
 // Batch Pay Multiple Orders (Combined Daily Bills)
 router.post('/pay-batch', userAuth, async (req, res) => {
   try {
@@ -232,6 +329,9 @@ router.post('/pay-batch', userAuth, async (req, res) => {
         const updated = await updatePaymentStatus(id, 'PAID');
         if (updated) results.push(updated);
       } catch (e) {}
+    }
+    if (results.length > 0) {
+      handlePostPaymentActions(results, req.user);
     }
     res.status(200).json({
       success: true,
@@ -301,6 +401,9 @@ router.post('/:id/pay', userAuth, async (req, res) => {
     }
 
     const updated = await updatePaymentStatus(req.params.id, 'PAID');
+    if (updated) {
+      handlePostPaymentActions([updated], req.user);
+    }
     res.status(200).json({
       success: true,
       message: 'Payment completed successfully. Thank you!',

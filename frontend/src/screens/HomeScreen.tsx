@@ -13,7 +13,7 @@ import { AppIcon } from '../components/AppIcon';
 import { useCanteen } from '../context/CanteenContext';
 import { CategoryFilterBar } from '../components/CategoryFilterBar';
 import { FoodCard } from '../components/FoodCard';
-import { MealTimingsWidget } from '../components/MealTimingsWidget';
+import { CartSidebar } from '../components/CartSidebar';
 
 const TAJ_IMAGE_SOURCE = Platform.select({
   web: { uri: '/taj.png' },
@@ -57,10 +57,9 @@ export const HomeScreen: React.FC = () => {
     isMenuLoading,
     fetchMenu,
     userProfile,
-    totalCartItems,
-    cartSubtotal,
   } = useCanteen();
   const [greeting, setGreeting] = React.useState<string>(getTimeBasedGreeting);
+  const [dietFilter, setDietFilter] = React.useState<'all' | 'veg' | 'non-veg'>('all');
 
   React.useEffect(() => {
     const updateGreeting = () => {
@@ -71,7 +70,7 @@ export const HomeScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Filter items based on active category & search query (from backend items only)
+  // Filter items based on active category, search query & Veg/Non-Veg filter
   const filteredItems = (menuItems || []).filter((item) => {
     const matchesCategory =
       activeCategory === 'all' ||
@@ -85,7 +84,12 @@ export const HomeScreen: React.FC = () => {
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.category.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesCategory && matchesSearch;
+    const matchesDiet =
+      dietFilter === 'all' ||
+      (dietFilter === 'veg' && item.isVeg === true) ||
+      (dietFilter === 'non-veg' && item.isVeg === false);
+
+    return matchesCategory && matchesSearch && matchesDiet;
   });
 
   return (
@@ -114,16 +118,12 @@ export const HomeScreen: React.FC = () => {
         {/* Right Slogan */}
         <View style={styles.sloganWrapper}>
           <View style={styles.sloganRow}>
-            {/* Left Vertical Line */}
             <View style={styles.sloganVerticalLine} />
-
-            {/* Slogan Text */}
             <Text style={styles.sloganText}>
               Nourishing{'\n'}People.{'\n'}Enabling{'\n'}Progress.
             </Text>
           </View>
 
-          {/* Bottom Two-Tone Accent Line: Orange (left) & Green (right) */}
           <View style={styles.twoToneAccentLine}>
             <View style={styles.orangeLineSegment} />
             <View style={styles.greenLineSegment} />
@@ -131,42 +131,46 @@ export const HomeScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* 1.5 Quick Action Bar: Cart */}
-      <View style={styles.quickActionBar}>
-        <TouchableOpacity
-          style={styles.cartBannerCard}
-          onPress={() => setActiveTab('cart')}
-          activeOpacity={0.85}
-        >
-          <View style={styles.cartBannerLeft}>
-            <View style={styles.cartIconCircle}>
-              <AppIcon name="cart-outline" size={17} color="#ffffff" />
-              {totalCartItems > 0 && (
-                <View style={styles.cartCircleBadge}>
-                  <Text style={styles.cartCircleBadgeText}>{totalCartItems}</Text>
-                </View>
-              )}
-            </View>
-            <View style={styles.cartBannerTexts}>
-              <Text style={styles.cartBannerTitle}>Food Cart</Text>
-              <Text style={styles.cartBannerSubtitle}>
-                {totalCartItems === 0
-                  ? '0 items added'
-                  : `${totalCartItems} items • ₹${cartSubtotal} total`}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.cartBannerCta}>
-            <Text style={styles.cartBannerCtaText}>View Cart</Text>
-            <AppIcon name="arrow-forward" size={13} color="#0d3829" style={{ marginLeft: 4 }} />
-          </View>
-        </TouchableOpacity>
+      {/* 2. Category Filter & Veg / Non-Veg Toggle Bar */}
+      <View style={styles.filterSectionWrapper}>
+        <View style={styles.dietToggleRow}>
+          <TouchableOpacity
+            style={[styles.dietBtn, dietFilter === 'all' && styles.dietBtnActive]}
+            onPress={() => setDietFilter('all')}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.dietBtnText, dietFilter === 'all' && styles.dietBtnTextActive]}>
+              All Dishes
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.dietBtn, dietFilter === 'veg' && styles.dietBtnVegActive]}
+            onPress={() => setDietFilter('veg')}
+            activeOpacity={0.75}
+          >
+            <View style={styles.vegDotIcon} />
+            <Text style={[styles.dietBtnText, dietFilter === 'veg' && styles.dietBtnTextActive]}>
+              Veg Only
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.dietBtn, dietFilter === 'non-veg' && styles.dietBtnNonVegActive]}
+            onPress={() => setDietFilter('non-veg')}
+            activeOpacity={0.75}
+          >
+            <View style={styles.nonVegDotIcon} />
+            <Text style={[styles.dietBtnText, dietFilter === 'non-veg' && styles.dietBtnTextActive]}>
+              Non-Veg
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <CategoryFilterBar />
       </View>
 
-      {/* 2. Category Filter Pills */}
-      <CategoryFilterBar />
-
-      {/* 3. Main Body: Today's Menu Grid + Right Widgets */}
+      {/* 3. Main Body: Today's Menu Grid + Direct Cart Screen on Right */}
       <View style={styles.bodyLayout}>
         {/* Left Column: Menu Items */}
         <View style={styles.menuColumn}>
@@ -207,7 +211,7 @@ export const HomeScreen: React.FC = () => {
           ) : filteredItems.length === 0 ? (
             <View style={styles.emptyContainer}>
               <AppIcon name="restaurant-outline" size={28} color="#94a3b8" />
-              <Text style={styles.emptyText}>No menu items found</Text>
+              <Text style={styles.emptyText}>No menu items found for this selection</Text>
             </View>
           ) : (
             <View style={styles.foodGrid}>
@@ -220,9 +224,9 @@ export const HomeScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Right Column: Widgets */}
+        {/* Right Column: Direct Interactive Cart Screen */}
         <View style={styles.widgetColumn}>
-          <MealTimingsWidget />
+          <CartSidebar />
         </View>
       </View>
 
@@ -491,160 +495,61 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 8,
   },
-  quickActionBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingTop: 14,
+  filterSectionWrapper: {
+    backgroundColor: '#ffffff',
+    paddingTop: 4,
     paddingBottom: 4,
-    gap: 12,
   },
-  cartBannerCard: {
-    flex: 1,
+  dietToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  paymentBannerCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fffbeb',
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  cartBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  cartIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#0a3d31',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  cartCircleBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#e11d48',
-    borderRadius: 999,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  cartCircleBadgeText: {
-    color: '#ffffff',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  cartBannerTexts: {
-    justifyContent: 'center',
-  },
-  cartBannerTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0a3d31',
-  },
-  cartBannerSubtitle: {
-    fontSize: 11,
-    color: '#15803d',
-    fontWeight: '500',
-  },
-  cartBannerCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  cartBannerCtaText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0a3d31',
-  },
-  paymentIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#d97706',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  paymentBannerTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#92400e',
-  },
-  paymentBannerSubtitle: {
-    fontSize: 11,
-    color: '#b45309',
-    fontWeight: '500',
-  },
-  paymentBannerCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  paymentBannerCtaText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#b45309',
-  },
-  headerButtonsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 6,
+    paddingBottom: 4,
     gap: 8,
   },
-  cartHeaderBtn: {
+  dietBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  cartHeaderBtnText: {
+  dietBtnActive: {
+    backgroundColor: '#0a3d31',
+    borderColor: '#0a3d31',
+  },
+  dietBtnVegActive: {
+    backgroundColor: '#15803d',
+    borderColor: '#15803d',
+  },
+  dietBtnNonVegActive: {
+    backgroundColor: '#be123c',
+    borderColor: '#be123c',
+  },
+  dietBtnText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#0d3829',
-  },
-  cartHeaderBadge: {
-    backgroundColor: '#e11d48',
-    borderRadius: 999,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-    marginLeft: 5,
-  },
-  cartHeaderBadgeText: {
-    color: '#ffffff',
-    fontSize: 9,
     fontWeight: '700',
+    color: '#475569',
+  },
+  dietBtnTextActive: {
+    color: '#ffffff',
+  },
+  vegDotIcon: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#16a34a',
+    marginRight: 6,
+  },
+  nonVegDotIcon: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#e11d48',
+    marginRight: 6,
   },
 });

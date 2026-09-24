@@ -460,12 +460,104 @@ function sendBillMessage({ to, billText, qrDataUrl }) {
   };
 }
 
+async function sendPaidInvoicePdf({ to, userName, billData, pdfBuffer }) {
+  const cfg = readConfig();
+  const fromNumber = cfg.adminWhatsAppNumber || '+91 91212 66269';
+  const cleanTo = (to || '').trim();
+
+  if (!cleanTo || cleanTo.replace(/\D/g, '').length < 10) {
+    return { success: false, status: 'FAILED', error: 'Invalid 10-digit mobile number.' };
+  }
+
+  const recipientJid = formatWhatsAppJid(cleanTo);
+  const invoicePdfService = require('./invoicePdfService');
+
+  let finalPdfBuffer = pdfBuffer;
+  if (!finalPdfBuffer) {
+    try {
+      finalPdfBuffer = await invoicePdfService.generateInvoicePdf(billData);
+    } catch (e) {
+      console.error('[WhatsApp PDF] Error generating invoice PDF:', e);
+    }
+  }
+
+  const invoiceNo = billData.invoiceNo || `INV-${Date.now().toString().slice(-6)}`;
+  const totalAmount = billData.totalAmount || 0;
+  const officerName = userName || billData.userName || 'IAS Officer';
+
+  const caption = `🏛️ *GOVERNMENT OF INDIA • CANTEEN SERVICES*\n\n` +
+    `*OFFICIAL FOOD INVOICE (PAID)*\n` +
+    `Dear *${officerName}*,\n` +
+    `Your dining bill payment of *₹${totalAmount}* has been verified and settled.\n\n` +
+    `📄 *Invoice No:* ${invoiceNo}\n` +
+    `📅 *Date:* ${billData.date || new Date().toLocaleDateString('en-IN')}, ${billData.time || new Date().toLocaleTimeString('en-IN')}\n` +
+    `💳 *Status:* PAID (Online UPI)\n\n` +
+    `Your official Tax Invoice PDF is attached above.\n` +
+    `Thank you for dining with Canteen Services!`;
+
+  const dispatchRecord = {
+    id: `inv_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+    from: fromNumber,
+    to: cleanTo,
+    userName: officerName,
+    invoiceNo,
+    totalAmount,
+    messageText: caption,
+    provider: 'whatsapp_web',
+    status: 'QUEUED',
+    timestamp: new Date().toISOString()
+  };
+
+  if (waSocket && connectionStatus === 'CONNECTED') {
+    try {
+      if (finalPdfBuffer) {
+        await waSocket.sendMessage(recipientJid, {
+          document: finalPdfBuffer,
+          mimetype: 'application/pdf',
+          fileName: `Canteen_Invoice_${invoiceNo}.pdf`,
+          caption
+        });
+      } else {
+        await waSocket.sendMessage(recipientJid, { text: caption });
+      }
+      dispatchRecord.status = 'DELIVERED';
+      dispatchRecord.providerStatus = 'SENT_VIA_WHATSAPP_WEB_LIVE';
+      console.log(`[WhatsApp Web] Official PDF invoice sent to ${cleanTo}!`);
+    } catch (err) {
+      console.error('[WhatsApp Web] Error sending PDF invoice:', err);
+      dispatchRecord.status = 'FAILED';
+      dispatchRecord.providerStatus = `ERROR: ${err.message}`;
+    }
+  } else {
+    dispatchRecord.status = 'PENDING_PAIRING';
+    dispatchRecord.providerStatus = 'WAITING_FOR_ADMIN_WHATSAPP_PAIRING (Scan QR on Admin Dashboard)';
+    console.warn(`[WhatsApp Web] WhatsApp not linked yet. Pair at http://localhost:5001/admin/ to deliver to ${cleanTo}`);
+  }
+
+  const outbox = readOutbox();
+  outbox.unshift(dispatchRecord);
+  if (outbox.length > 200) outbox.length = 200;
+  writeOutbox(outbox);
+
+  return {
+    success: dispatchRecord.status === 'DELIVERED' || dispatchRecord.status === 'PENDING_PAIRING',
+    status: dispatchRecord.status,
+    invoiceNo
+  };
+}
+
+async function sendMessage(to, text) {
+  return sendBillMessage({ to, billText: text });
+}
+
 module.exports = {
   getConfig,
   saveConfig,
   sendQrMessage,
   sendTestMessage,
   sendBillMessage,
+  sendPaidInvoicePdf,
+  sendMessage,
   getOutbox,
   initWhatsAppWebClient,
   disconnectWhatsAppWebClient,
