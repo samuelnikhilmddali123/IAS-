@@ -294,11 +294,12 @@ async function handlePostPaymentActions(orders, user) {
     };
 
     // 1. Immediately print User Paid Invoice to Thermal Printer (POS-80C)
+    let printResult = null;
     if (printerService.printUserPaidBill) {
-      printerService.printUserPaidBill(userBillData);
+      printResult = await printerService.printUserPaidBill(userBillData);
     }
 
-    // 2. Dispatch Official Paid Invoice PDF directly to user on WhatsApp
+    // 2. Dispatch the exact printed bill saved as bill.pdf directly to user on WhatsApp
     if (userPhone && whatsappService) {
       try {
         if (whatsappService.sendPaidInvoicePdf) {

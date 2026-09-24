@@ -242,29 +242,40 @@ function printOrderBackend(order) {
 }
 
 function printUserPaidBill(userBillData) {
-  try {
-    const renderPsScript = path.join(__dirname, 'RenderAndPrintUserBill.ps1');
-    const tempBillJson = path.join(__dirname, '..', '..', 'temp_user_bill_print.json');
-    fs.writeFileSync(tempBillJson, JSON.stringify(userBillData, null, 2), 'utf8');
+  return new Promise((resolve) => {
+    try {
+      const renderPsScript = path.join(__dirname, 'RenderAndPrintUserBill.ps1');
+      const tempBillJson = path.join(__dirname, '..', '..', 'temp_user_bill_print.json');
+      const tempBillPng = path.join(__dirname, '..', '..', 'temp_user_bill.png');
+      fs.writeFileSync(tempBillJson, JSON.stringify(userBillData, null, 2), 'utf8');
 
-    const psCommand = `powershell.exe -ExecutionPolicy Bypass -File "${renderPsScript}" -PrinterName "POS-80C" -BillJsonPath "${tempBillJson}"`;
-    
-    console.log('[PRINTER] Rendering and sending Exact User Paid Invoice to POS-80C...');
-    
-    exec(psCommand, (error, stdout, stderr) => {
-      if (error) {
-        console.warn(`[PRINTER USER INVOICE WARNING]: ${error.message}`);
-      } else {
-        console.log(`[PRINTER USER INVOICE SUCCESS]: ${stdout ? stdout.trim() : 'SUCCESS'}`);
-      }
+      const psCommand = `powershell.exe -ExecutionPolicy Bypass -File "${renderPsScript}" -PrinterName "POS-80C" -BillJsonPath "${tempBillJson}"`;
       
-      setTimeout(() => {
-        if (fs.existsSync(tempBillJson)) fs.unlinkSync(tempBillJson);
-      }, 5000);
-    });
-  } catch (err) {
-    console.error('[PRINTER USER INVOICE CATCH ERROR]', err);
-  }
+      console.log('[PRINTER] Rendering and sending Exact User Paid Invoice to POS-80C...');
+      
+      exec(psCommand, (error, stdout, stderr) => {
+        if (error) {
+          console.warn(`[PRINTER USER INVOICE WARNING]: ${error.message}`);
+        } else {
+          console.log(`[PRINTER USER INVOICE SUCCESS]: ${stdout ? stdout.trim() : 'SUCCESS'}`);
+        }
+        
+        setTimeout(() => {
+          if (fs.existsSync(tempBillJson)) {
+            try { fs.unlinkSync(tempBillJson); } catch {}
+          }
+        }, 3000);
+
+        resolve({
+          success: !error,
+          imagePath: fs.existsSync(tempBillPng) ? tempBillPng : null
+        });
+      });
+    } catch (err) {
+      console.error('[PRINTER USER INVOICE CATCH ERROR]', err);
+      resolve({ success: false, error: err.message });
+    }
+  });
 }
 
 module.exports = {
