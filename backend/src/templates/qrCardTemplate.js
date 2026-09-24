@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 
 // Read the blank template and convert to Base64 so it can be safely embedded in HTML
-const bgPath = path.join(__dirname, '../../public/QR share IAS.png');
+let bgPath = path.join(__dirname, '../../public/QR Share  (1).png');
+if (!fs.existsSync(bgPath)) {
+  bgPath = path.join(__dirname, '../../public/QR share IAS.png');
+}
+
 let bgBase64 = '';
 try {
   if (fs.existsSync(bgPath)) {
@@ -15,27 +19,30 @@ try {
 
 module.exports = function generateQrCardHtml(officer) {
   const name = officer.name || 'Officer';
-  const designation = officer.designation || 'IAS OFFICER';
-  const location = officer.location || '';
-  const phone = officer.phone ? `+91 ${officer.phone.replace(/^91/, '')}` : '';
-  const email = officer.email || '';
+  const designation = officer.designation || 'Special Duty Officer';
+  const location = officer.location || 'New Delhi, India';
   const qrDataUrl = officer.qrDataUrl || '';
   const photoUrl = officer.photoUrl || '';
+  const roleBadge = officer.category || officer.roleBadge || 'IAS OFFICER';
 
   return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    * {
+      box-sizing: border-box;
+    }
     body {
       margin: 0;
       padding: 0;
       width: 1024px;
       height: 1536px;
-      font-family: 'Inter', sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       position: relative;
+      background-color: #f8fafc;
     }
     .background {
       position: absolute;
@@ -43,9 +50,9 @@ module.exports = function generateQrCardHtml(officer) {
       left: 0;
       width: 1024px;
       height: 1536px;
-      z-index: -1;
+      z-index: 1;
       background-image: url('${bgBase64}');
-      background-size: cover;
+      background-size: 100% 100%;
       background-position: center;
       background-repeat: no-repeat;
     }
@@ -53,18 +60,20 @@ module.exports = function generateQrCardHtml(officer) {
     /* Profile Photo Circle */
     .profile-photo {
       position: absolute;
-      top: 265px;
-      left: 75px;
-      width: 240px;
-      height: 240px;
+      top: 275px;
+      left: 78px;
+      width: 238px;
+      height: 238px;
       border-radius: 50%;
       overflow: hidden;
       display: flex;
       justify-content: center;
       align-items: center;
-      font-size: 80px;
-      font-weight: bold;
-      color: #94a3b8;
+      background: #e2e8f0;
+      font-size: 88px;
+      font-weight: 700;
+      color: #064e3b;
+      z-index: 10;
     }
     .profile-photo img {
       width: 100%;
@@ -72,72 +81,62 @@ module.exports = function generateQrCardHtml(officer) {
       object-fit: cover;
     }
     
-    /* Name & Details */
+    /* Name & Details (Clean Layout matching provided image) */
     .profile-info {
       position: absolute;
-      top: 285px;
-      left: 360px;
-      width: 600px;
+      top: 282px;
+      left: 355px;
+      width: 575px;
+      z-index: 10;
+    }
+    .profile-badge {
+      font-size: 19px;
+      font-weight: 700;
+      color: #64748b;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
     }
     .profile-name {
-      font-size: 44px;
-      font-weight: 700;
+      font-size: 42px;
+      font-weight: 800;
       color: #0f172a;
-      margin: 0 0 10px 0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      margin: 0 0 8px 0;
+      line-height: 1.18;
+      word-break: break-word;
     }
     .profile-designation {
       font-size: 26px;
       font-weight: 600;
-      color: #475569;
-      margin: 0 0 8px 0;
+      color: #334155;
+      margin: 0 0 6px 0;
+      line-height: 1.25;
     }
     .profile-location {
-      font-size: 22px;
+      font-size: 24px;
+      font-weight: 500;
       color: #64748b;
       margin: 0;
+      line-height: 1.25;
     }
     
-    /* Contact Details */
-    .contact-phone {
-      position: absolute;
-      top: 475px;
-      left: 405px;
-      font-size: 22px;
-      font-weight: 600;
-      color: #0f172a;
-    }
-    .contact-email {
-      position: absolute;
-      top: 475px;
-      left: 712px;
-      font-size: 22px;
-      font-weight: 600;
-      color: #0f172a;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 280px;
-    }
-    
-    /* QR Code Box */
+    /* QR Code Container (Forest Green QR Code) */
     .qr-container {
       position: absolute;
-      top: 573px;
-      left: 242px;
-      width: 540px;
-      height: 540px;
+      top: 575px;
+      left: 245px;
+      width: 535px;
+      height: 535px;
       display: flex;
       justify-content: center;
       align-items: center;
-      border-radius: 30px;
+      border-radius: 28px;
       overflow: hidden;
+      z-index: 10;
     }
     .qr-container img {
-      width: 95%;
-      height: 95%;
+      width: 98%;
+      height: 98%;
       object-fit: contain;
     }
 
@@ -147,17 +146,15 @@ module.exports = function generateQrCardHtml(officer) {
   ${bgBase64 ? '<div class="background"></div>' : ''}
   
   <div class="profile-photo">
-    ${photoUrl ? `<img src="${photoUrl}">` : name.charAt(0)}
+    ${photoUrl ? `<img src="${photoUrl}">` : name.charAt(0).toUpperCase()}
   </div>
   
   <div class="profile-info">
+    <div class="profile-badge">${roleBadge}</div>
     <h2 class="profile-name">${name}</h2>
-    <p class="profile-designation">${designation}</p>
-    ${location ? `<p class="profile-location">${location}</p>` : ''}
+    <div class="profile-designation">${designation}</div>
+    ${location ? `<div class="profile-location">${location}</div>` : ''}
   </div>
-  
-  <div class="contact-phone">${phone}</div>
-  <div class="contact-email">${email}</div>
   
   <div class="qr-container">
     <img src="${qrDataUrl}" alt="QR">
