@@ -514,7 +514,7 @@ async function sendPaidInvoicePdf({ to, userName, billData, pdfBuffer }) {
         await waSocket.sendMessage(recipientJid, {
           document: finalPdfBuffer,
           mimetype: 'application/pdf',
-          fileName: `Canteen_Invoice_${invoiceNo}.pdf`,
+          fileName: 'bill.pdf',
           caption
         });
       } else {

@@ -201,6 +201,9 @@ const handlePaymentStatusUpdate = async (req, res) => {
       return res.status(400).json({ success: false, message: 'paymentStatus is required' });
     }
     const order = await updatePaymentStatus(req.params.id, paymentStatus.toUpperCase());
+    if (order && paymentStatus.toUpperCase() === 'PAID') {
+      handlePostPaymentActions([order], req.user || { id: order.userId });
+    }
     res.status(200).json({
       success: true,
       message: `Order payment status updated to ${paymentStatus}`,

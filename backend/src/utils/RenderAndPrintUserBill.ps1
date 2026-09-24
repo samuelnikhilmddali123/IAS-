@@ -287,6 +287,12 @@ $g.DrawString("GOOD FOOD. GREATER SERVICE.", $fontFootSub, $blackBrush, 288, ($c
 
 $g.Dispose()
 
+# Save rendered image for direct PDF export
+$tempBillPng = "C:\Users\Nikhil\Downloads\restaurant\backend\temp_user_bill.png"
+try {
+    $bmp.Save($tempBillPng, [System.Drawing.Imaging.ImageFormat]::Png)
+} catch {}
+
 # Convert Bitmap to ESC/POS Raster Bytes
 $width = $bmp.Width
 $height = $bmp.Height
