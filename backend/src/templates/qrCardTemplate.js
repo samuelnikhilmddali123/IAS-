@@ -18,9 +18,9 @@ try {
 }
 
 module.exports = function generateQrCardHtml(officer) {
-  const name = officer.name || 'Officer';
-  const designation = officer.designation || 'Special Duty Officer';
-  const location = officer.location || 'New Delhi, India';
+  const name = (officer.name || officer.userName || 'Officer').trim();
+  const designation = (officer.designation || 'Special Duty Officer').trim();
+  const location = (officer.location || officer.department || '').trim();
   const qrDataUrl = officer.qrDataUrl || '';
   const photoUrl = officer.photoUrl || '';
   const roleBadge = officer.category || officer.roleBadge || 'IAS OFFICER';

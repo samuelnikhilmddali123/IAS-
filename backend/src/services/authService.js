@@ -281,12 +281,16 @@ const registerUser = async (userData) => {
   // Generate Lifetime QR Credential
   const qrInfo = await qrService.generateLifetimeQr({
     userId: savedUser.id,
+    name: savedUser.name,
     userName: savedUser.name,
+    phone: savedUser.phone,
     userPhone: savedUser.phone,
     officerId: savedUser.officerId,
     designation: savedUser.designation,
+    location: savedUser.location || savedUser.department || '',
     department: savedUser.department,
-    avatar: savedUser.avatar
+    avatar: savedUser.avatar,
+    email: savedUser.email
   });
 
   // Attach Lifetime QR to User in MongoDB
@@ -758,12 +762,16 @@ const regenerateUserQr = async (userId) => {
 
   const qrInfo = await qrService.generateLifetimeQr({
     userId: user.id,
+    name: user.name,
     userName: user.name,
+    phone: user.phone,
     userPhone: user.phone,
     officerId: user.officerId,
     designation: user.designation,
+    location: user.location || user.department || '',
     department: user.department,
-    avatar: user.avatar
+    avatar: user.avatar,
+    email: user.email
   });
 
   if (mongoose.connection.readyState === 1) {

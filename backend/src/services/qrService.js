@@ -55,12 +55,16 @@ function hashToken(randomToken) {
 async function createQrLoginToken(user) {
   const tokens = readTokens();
   const now = new Date();
-  const userId = String(user.id || user._id || user.officerId);
-  const userPhone = user.phone || user.mobile;
+  const userId = String(user.id || user._id || user.officerId || user.userId || '');
+  const userPhone = user.phone || user.mobile || user.userPhone || '';
+  const userName = (user.name || user.userName || 'IAS Officer').trim();
+  const userDesignation = (user.designation || 'Special Duty Officer').trim();
+  const userLocation = (user.location || user.department || '').trim();
+  const userAvatar = user.avatar || user.photoUrl || user.image || '';
 
   // Revoke any previous active QR for this user when generating a fresh one
   tokens.forEach((t) => {
-    if (t.userId === userId || t.userPhone === userPhone) {
+    if (t.userId === userId || (userPhone && t.userPhone === userPhone)) {
       t.revoked = true;
       t.revokedAt = now.toISOString();
       t.invalidatedByNewQr = true;
@@ -82,7 +86,7 @@ async function createQrLoginToken(user) {
     margin: 2,
     scale: 8,
     color: {
-      dark: '#0a3d31',
+      dark: '#064e3b',
       light: '#ffffff',
     },
   });
@@ -92,14 +96,16 @@ async function createQrLoginToken(user) {
     const generateQrCardHtml = require('../templates/qrCardTemplate');
     
     const htmlString = generateQrCardHtml({
-      name: user.name,
-      designation: user.designation,
-      location: user.location,
-      phone: user.phone || user.mobile,
-      email: user.email,
+      name: userName,
+      userName: userName,
+      designation: userDesignation,
+      location: userLocation,
+      phone: userPhone,
+      email: user.email || '',
       qrDataUrl: qrDataUrl,
-      photoUrl: user.avatar || user.image || '',
+      photoUrl: userAvatar,
       isLifetime: true,
+      category: user.category || 'IAS OFFICER'
     });
     
     await nodeHtmlToImage({
@@ -117,7 +123,7 @@ async function createQrLoginToken(user) {
       errorCorrectionLevel: 'H',
       margin: 2,
       scale: 10,
-      color: { dark: '#0a3d31', light: '#ffffff' }
+      color: { dark: '#064e3b', light: '#ffffff' }
     });
     fs.writeFileSync(qrFilePath, qrBuffer);
   }
@@ -126,7 +132,7 @@ async function createQrLoginToken(user) {
     id: qrId,
     userId,
     userPhone,
-    userName: user.name || 'IAS Officer',
+    userName: userName,
     tokenHash: hashToken(randomToken),
     signature,
     qrPayload,
