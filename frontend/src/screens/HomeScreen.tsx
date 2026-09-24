@@ -135,7 +135,7 @@ export const HomeScreen: React.FC = () => {
       <View style={styles.quickActionBar}>
         <TouchableOpacity
           style={styles.cartBannerCard}
-          onPress={() => setActiveTab('orders')}
+          onPress={() => setActiveTab('cart')}
           activeOpacity={0.85}
         >
           <View style={styles.cartBannerLeft}>
@@ -178,30 +178,14 @@ export const HomeScreen: React.FC = () => {
               </Text>
             </View>
 
-            <View style={styles.headerButtonsRow}>
-              <TouchableOpacity
-                style={styles.cartHeaderBtn}
-                onPress={() => setActiveTab('orders')}
-                activeOpacity={0.7}
-              >
-                <AppIcon name="cart-outline" size={15} color="#0d3829" style={{ marginRight: 6 }} />
-                <Text style={styles.cartHeaderBtnText}>Cart</Text>
-                {totalCartItems > 0 && (
-                  <View style={styles.cartHeaderBadge}>
-                    <Text style={styles.cartHeaderBadgeText}>{totalCartItems}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.viewFullMenuBtn}
-                onPress={() => setActiveTab('menu')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.viewFullMenuText}>View Full Menu</Text>
-                <AppIcon name="arrow-forward" size={13} color="#0f172a" style={{ marginLeft: 4 }} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.viewFullMenuBtn}
+              onPress={() => setActiveTab('menu')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.viewFullMenuText}>View Full Menu</Text>
+              <AppIcon name="arrow-forward" size={13} color="#0f172a" style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
           </View>
 
           {/* Backend Error / Loading / Menu Items */}

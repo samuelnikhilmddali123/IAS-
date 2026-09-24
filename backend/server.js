@@ -46,7 +46,10 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// Static files for Admin Dashboard and Uploads (Dishes & QR images)
+// Static files for KOT Kitchen Display and Normal Admin Dashboard
+const kotPath = path.join(__dirname, 'public/admin/kot');
+app.use('/admin/kot', express.static(kotPath));
+
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

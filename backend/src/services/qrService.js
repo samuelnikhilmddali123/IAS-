@@ -76,16 +76,7 @@ async function createQrLoginToken(user) {
 
   // Generate QR Image file on disk and Data URL
   const qrFilePath = path.join(UPLOADS_QR_DIR, `${qrId}.png`);
-  await QRCode.toFile(qrFilePath, qrPayload, {
-    errorCorrectionLevel: 'H',
-    margin: 2,
-    scale: 8,
-    color: {
-      dark: '#0a3d31', // Government Forest Green
-      light: '#ffffff',
-    },
-  });
-
+  
   const qrDataUrl = await QRCode.toDataURL(qrPayload, {
     errorCorrectionLevel: 'H',
     margin: 2,
@@ -95,6 +86,41 @@ async function createQrLoginToken(user) {
       light: '#ffffff',
     },
   });
+  
+  try {
+    const nodeHtmlToImage = require('node-html-to-image');
+    const generateQrCardHtml = require('../templates/qrCardTemplate');
+    
+    const htmlString = generateQrCardHtml({
+      name: user.name,
+      designation: user.designation,
+      location: user.location,
+      phone: user.phone || user.mobile,
+      email: user.email,
+      qrDataUrl: qrDataUrl,
+      photoUrl: user.avatar || user.image || '',
+      isLifetime: true,
+    });
+    
+    await nodeHtmlToImage({
+      output: qrFilePath,
+      html: htmlString,
+      puppeteerArgs: { 
+        defaultViewport: { width: 1024, height: 1536 },
+        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+      }
+    });
+  } catch (err) {
+    console.error('Error generating HTML QR card:', err);
+    // Fallback: save raw QR code
+    const qrBuffer = await QRCode.toBuffer(qrPayload, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      scale: 10,
+      color: { dark: '#0a3d31', light: '#ffffff' }
+    });
+    fs.writeFileSync(qrFilePath, qrBuffer);
+  }
 
   const tokenRecord = {
     id: qrId,
@@ -231,7 +257,9 @@ function getTokens(limit = 50) {
 
 module.exports = {
   createQrLoginToken,
+  generateLifetimeQr: createQrLoginToken,
   validateAndConsumeQr,
+  verifyLifetimeQr: validateAndConsumeQr,
   revokeQr,
   regenerateQr,
   getTokens,

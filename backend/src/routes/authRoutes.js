@@ -10,7 +10,8 @@ const {
   updateUser,
   deleteUser,
   revokeUserQr,
-  regenerateUserQr
+  regenerateUserQr,
+  updateUserProfile
 } = require('../services/authService');
 const userAuth = require('../middleware/userAuthMiddleware');
 
@@ -105,6 +106,68 @@ router.post('/login', handleUserLogin);
 // QR Login Endpoints
 router.post('/qr-login', handleQrLogin);
 router.post('/user/qr-login', handleQrLogin);
+
+// 1-Tap Quick Login by User ID or Phone
+// 1-Tap Quick Login by User ID or Phone (Honors 1-hour PIN timer without restarting it)
+router.post('/quick-login', async (req, res) => {
+  try {
+    const { userId, phone } = req.body;
+    const users = await getAllUsers();
+    const cleanPhone = phone ? String(phone).replace(/\D/g, '').slice(-10) : '';
+    const user = users.find(u => {
+      if (userId && (String(u.id) === String(userId) || String(u._id) === String(userId))) return true;
+      if (cleanPhone) {
+        const uPhone = String(u.phone || '').replace(/\D/g, '').slice(-10);
+        return uPhone === cleanPhone;
+      }
+      return false;
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Officer account not found in database.' });
+    }
+
+    const now = Date.now();
+    const pinExpTime = user.pinExpiresAt ? new Date(user.pinExpiresAt).getTime() : 0;
+
+    // Check if 1-hour active window has expired
+    if (!pinExpTime || now >= pinExpTime) {
+      return res.status(401).json({
+        success: false,
+        code: 'PIN_REQUIRED',
+        message: '1-hour PIN session has expired. Please enter your PIN to login.'
+      });
+    }
+
+    // IMPORTANT: DO NOT restart or extend the 1-hour timer when logging in without PIN!
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { id: user.id, name: user.name, phone: user.phone, role: 'user' },
+      process.env.JWT_SECRET || 'canteen_super_secret_jwt_key_2026_secure',
+      { expiresIn: '30d' }
+    );
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        mobile: user.phone,
+        avatar: user.avatar,
+        designation: user.designation,
+        location: user.location || '',
+        department: user.department,
+        officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4)),
+        pinExpiresAt: user.pinExpiresAt
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Current Authenticated Officer Profile Endpoint
 const handleMe = async (req, res) => {
@@ -240,6 +303,34 @@ router.get('/my-qr', userAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
+// Edit Profile Route
+router.put('/profile', userAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const updates = {
+      name: req.body.name,
+      designation: req.body.designation,
+      location: req.body.location,
+      avatar: req.body.avatar
+    };
+    
+    const updatedUser = await updateUserProfile(userId, updates);
+    
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('[AUTH] Profile Update Error:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'An unexpected error occurred during profile update',
+    });
   }
 });
 

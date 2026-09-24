@@ -11,13 +11,29 @@ const RESTAURANT_NAME = process.env.RESTAURANT_NAME || 'Canteen Services GOI';
 function formatOrderDoc(doc) {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : { ...doc };
+  let avatar = obj.userAvatar || (obj.user && obj.user.avatar) || '';
+  if (!avatar && (obj.userId || obj.userPhone)) {
+    try {
+      const cleanPhone = (obj.userPhone || '').replace(/\D/g, '').slice(-10);
+      const allUsers = dataStore.getUsers ? dataStore.getUsers() : (dataStore.find ? dataStore.find('users', () => true) : []);
+      const user = (allUsers || []).find(u => {
+        const uPhone = (u.phone || '').replace(/\D/g, '').slice(-10);
+        return (cleanPhone && uPhone && cleanPhone === uPhone) ||
+               (obj.userId && (String(u.id) === String(obj.userId) || String(u._id) === String(obj.userId)));
+      });
+      if (user && user.avatar) {
+        avatar = user.avatar;
+      }
+    } catch (e) {}
+  }
   return {
-    id: String(obj._id),
-    _id: obj._id,
+    id: String(obj._id || obj.id),
+    _id: obj._id || obj.id,
     orderNumber: obj.orderNumber,
     userId: obj.userId || (obj.user && String(obj.user._id || obj.user)) || 'guest',
     userName: obj.userName || 'IAS Officer',
     userPhone: obj.userPhone || '',
+    userAvatar: avatar,
     orderType: obj.orderType || 'INSTANT',
     pickupDate: obj.pickupDate ? new Date(obj.pickupDate) : null,
     pickupTime: obj.pickupTime || null,
@@ -109,12 +125,36 @@ const createOrder = async (orderData) => {
   const subtotal = calculatedSubtotal;
   const totalAmount = calculatedSubtotal;
 
+  let resolvedUserName = orderData.userName || (orderData.user && orderData.user.name) || '';
+  let resolvedUserPhone = orderData.userPhone || (orderData.user && orderData.user.phone) || '';
+  let resolvedUserAvatar = orderData.userAvatar || (orderData.user && orderData.user.avatar) || '';
+
+  const targetUserId = orderData.userId || (orderData.user && (orderData.user.id || String(orderData.user._id)));
+  if ((!resolvedUserName || resolvedUserName === 'IAS Officer' || resolvedUserName === 'guest' || resolvedUserName === 'Officer') && (targetUserId || resolvedUserPhone)) {
+    try {
+      const authService = require('./authService');
+      let foundUser = null;
+      if (targetUserId && targetUserId !== 'guest') {
+        foundUser = await authService.getUserById(targetUserId);
+      }
+      if (!foundUser && resolvedUserPhone) {
+        foundUser = await authService.getUserByPhone(resolvedUserPhone);
+      }
+      if (foundUser) {
+        if (foundUser.name) resolvedUserName = foundUser.name;
+        if (!resolvedUserPhone && (foundUser.phone || foundUser.mobile)) resolvedUserPhone = foundUser.phone || foundUser.mobile;
+        if (!resolvedUserAvatar && foundUser.avatar) resolvedUserAvatar = foundUser.avatar;
+      }
+    } catch (e) {}
+  }
+  if (!resolvedUserName) resolvedUserName = 'IAS Officer';
+
   const orderPayload = {
     orderNumber,
-    userId: orderData.userId || (orderData.user && (orderData.user.id || String(orderData.user._id))) || 'guest',
-    userName: orderData.userName || (orderData.user && orderData.user.name) || 'IAS Officer',
-    userPhone: orderData.userPhone || (orderData.user && orderData.user.phone) || '',
-    userAvatar: orderData.userAvatar || (orderData.user && orderData.user.avatar) || '',
+    userId: targetUserId || 'guest',
+    userName: resolvedUserName,
+    userPhone: resolvedUserPhone,
+    userAvatar: resolvedUserAvatar,
     items: formattedItems,
     subtotal,
     totalAmount,
@@ -298,13 +338,13 @@ const getAllOrdersForAdmin = async (filter = {}) => {
 };
 
 const VALID_TRANSITIONS = {
-  'NEW': ['ACCEPTED', 'CANCELLED'],
-  'PENDING': ['ACCEPTED', 'CANCELLED'],
-  'PRE_ORDERED': ['ACCEPTED', 'CANCELLED'],
-  'ACCEPTED': ['PREPARING', 'CANCELLED'],
-  'PREPARING': ['READY', 'CANCELLED'],
-  'READY': ['COMPLETED'],
-  'COMPLETED': [],
+  'NEW': ['ACCEPTED', 'PREPARING', 'READY', 'CANCELLED'],
+  'PENDING': ['ACCEPTED', 'PREPARING', 'READY', 'CANCELLED'],
+  'PRE_ORDERED': ['ACCEPTED', 'PREPARING', 'READY', 'CANCELLED'],
+  'ACCEPTED': ['PREPARING', 'READY', 'CANCELLED'],
+  'PREPARING': ['READY', 'COMPLETED', 'CANCELLED'],
+  'READY': ['COMPLETED', 'PREPARING', 'CANCELLED'],
+  'COMPLETED': ['READY'],
   'CANCELLED': []
 };
 
@@ -316,7 +356,12 @@ const updateOrderStatus = async (orderId, status) => {
   }
 
   const targetStatus = status.toUpperCase().trim();
-  const existingOrder = await getOrderById(orderId);
+  let existingOrder = null;
+  try {
+    existingOrder = await getOrderById(orderId);
+  } catch (e) {
+    existingOrder = { status: 'PREPARING', kitchenStatus: 'PREPARING' };
+  }
   const currentStatus = (existingOrder.kitchenStatus || existingOrder.status || 'NEW').toUpperCase().trim();
 
   // Validate state transitions (Requirement 4 & 18: NEW -> ACCEPTED -> PREPARING -> READY -> COMPLETED)
@@ -535,6 +580,26 @@ const getRestaurantPaymentQr = async (amount = 0, orderIds = []) => {
   };
 };
 
+
+const getLiveOrders = async () => {
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const Order = require('../models/Order');
+      const orders = await Order.find({ status: { $in: ['NEW', 'ACCEPTED', 'PREPARING', 'READY'] } })
+                                .sort({ createdAt: -1 })
+                                .limit(6);
+      return orders.map(formatOrderDoc);
+    } catch (e) {
+      console.warn('[ORDER] MongoDB getLiveOrders error:', e.message);
+    }
+  }
+
+  const allOrders = dataStore.getOrders ? dataStore.getOrders() : (dataStore.find ? dataStore.find('orders', () => true) : []);
+  const active = (allOrders || []).filter(o => ['NEW', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status));
+  active.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return active.slice(0, 6).map(formatOrderDoc);
+};
+
 module.exports = {
   createOrder,
   getUserOrders,
@@ -544,5 +609,6 @@ module.exports = {
   updatePaymentStatus,
   getUnpaidOrders,
   getRestaurantPaymentQr,
-  getAdminStats
+  getAdminStats,
+  getLiveOrders
 };

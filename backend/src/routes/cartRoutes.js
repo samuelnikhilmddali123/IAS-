@@ -366,6 +366,7 @@ async function resolveAuthenticatedUser(req) {
 router.post('/checkout', userAuth, async (req, res) => {
     const orderService = require('../services/orderService');
     const cartService = require('../services/cartService');
+    const printerService = require('../utils/printerService');
 
     try {
         const user = await resolveAuthenticatedUser(req);
@@ -415,6 +416,9 @@ router.post('/checkout', userAuth, async (req, res) => {
 
         // Create & Save order using existing Order model (also emits KOT via Socket.IO to Kitchen)
         const order = await orderService.createOrder(orderPayload);
+
+        // Print KOT to Thermal Printer
+        printerService.printOrderBackend(order);
 
         // Clear Cart
         await cartService.clearCart(user.id);

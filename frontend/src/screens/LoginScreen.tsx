@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
@@ -92,9 +93,170 @@ const DEFAULT_SUGGESTED_OFFICERS: OfficerPhotoItem[] = [
 
 export const LoginScreen: React.FC = () => {
   const { width, height } = useWindowDimensions();
-  const { login, registerUser, qrLogin, logoutNotice, setLogoutNotice } = useCanteen();
+  const { login, registerUser, qrLogin, logoutNotice, setLogoutNotice, quickLoginSession, quickLoginFromSaved, quickLogin } = useCanteen();
+  interface RecentUserSession {
+    id: string;
+    name: string;
+    phone?: string;
+    avatar: string;
+    designation?: string;
+    token?: string;
+    logoutTime: number;
+    expiresAt?: number;
+    orderStatus?: string | null;
+  }
 
-  // Mode: 'login' | 'register' | 'qr'
+  const [recentUserSessions, setRecentUserSessions] = useState<RecentUserSession[]>([]);
+  const profileScrollRef = useRef<ScrollView>(null);
+  const [profileScrollOffset, setProfileScrollOffset] = useState<number>(0);
+
+  const handleProfileScrollUp = () => {
+    profileScrollRef.current?.scrollTo({ y: Math.max(0, profileScrollOffset - 110), animated: true });
+  };
+
+  const handleProfileScrollDown = () => {
+    profileScrollRef.current?.scrollTo({ y: profileScrollOffset + 110, animated: true });
+  };
+
+  const handleProfileClick = async (session: RecentUserSession) => {
+    try {
+      const res = await fetchWithFallback('/api/auth/quick-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: session.id, phone: session.phone }),
+      }, 4000);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.user) {
+        quickLogin(data.token, data.user);
+        return;
+      }
+
+      // Session expired or user not found -> require PIN login
+      setErrorMsg(data.message || '1-hour session has expired. Please enter your PIN to login.');
+      setRecentUserSessions((prev) => prev.filter((s) => s.id !== session.id && s.phone !== session.phone));
+      if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('@recent_sessions');
+        if (raw) {
+          const list = JSON.parse(raw).filter((s: any) => s.id !== session.id && s.phone !== session.phone);
+          localStorage.setItem('@recent_sessions', JSON.stringify(list));
+        }
+        localStorage.removeItem('canteen_quick_login');
+      }
+      await AsyncStorage.removeItem('@recent_sessions');
+    } catch (err) {
+      setErrorMsg('Unable to verify officer profile with backend database.');
+    }
+  };
+
+  const fetchRecentSessionsAndStatuses = useCallback(async () => {
+    try {
+      // 1. Fetch live user list directly from backend
+      const usersRes = await fetchWithFallback('/api/auth/users', {}, 3000);
+      const usersData = await usersRes.json().catch(() => ({}));
+      const validDbUsers = Array.isArray(usersData?.users) ? usersData.users : [];
+
+      // If database has 0 users, wipe all stale sessions from storage & UI immediately!
+      if (validDbUsers.length === 0) {
+        setRecentUserSessions([]);
+        await AsyncStorage.removeItem('@recent_sessions');
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.removeItem('@recent_sessions');
+          localStorage.removeItem('canteen_quick_login');
+        }
+        return;
+      }
+
+      // 2. Read local sessions from storage
+      let raw = await AsyncStorage.getItem('@recent_sessions');
+      if (!raw && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+        raw = localStorage.getItem('@recent_sessions');
+      }
+
+      let sessions: RecentUserSession[] = raw ? JSON.parse(raw) : [];
+      const now = Date.now();
+
+      // 3. Filter sessions: ONLY KEEP users who exist in DB AND whose 1-hour PIN timer has NOT expired
+      sessions = sessions.filter((s) => {
+        const sPhone = (s.phone || '').replace(/\D/g, '').slice(-10);
+        const dbUser = validDbUsers.find((u: any) => {
+          const uPhone = (u.phone || '').replace(/\D/g, '').slice(-10);
+          return (uPhone && uPhone === sPhone) || String(u.id) === String(s.id) || String(u._id) === String(s.id);
+        });
+        if (!dbUser) return false;
+
+        // Check 1-hour PIN expiration from database (or session expiresAt)
+        const expTime = dbUser.pinExpiresAt ? new Date(dbUser.pinExpiresAt).getTime() : 0;
+        if (!expTime || now >= expTime) return false; // 1 hr completed -> hide profile!
+
+        s.expiresAt = expTime;
+        return true;
+      });
+
+      // Update storage with only verified DB users
+      if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('@recent_sessions', JSON.stringify(sessions));
+      }
+      await AsyncStorage.setItem('@recent_sessions', JSON.stringify(sessions));
+
+      if (sessions.length === 0) {
+        setRecentUserSessions([]);
+        return;
+      }
+
+      // 4. Query live active orders for verified sessions
+      const updated = await Promise.all(
+        sessions.map(async (s) => {
+          try {
+            const rawPhone = (s.phone || '').replace(/\D/g, '').slice(-10);
+            const queryParam = rawPhone ? ('phone=' + rawPhone) : ('userId=' + s.id);
+            let orders: any[] = [];
+
+            if (queryParam) {
+              try {
+                const res = await fetchWithFallback(`/api/orders?${queryParam}`, {}, 3000);
+                const data = await res.json().catch(() => ({}));
+                if (data.success && Array.isArray(data.orders)) {
+                  orders = data.orders;
+                }
+              } catch (e) {}
+            }
+
+            if (orders.length > 0) {
+              orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+              const active = orders.find((o) =>
+                ['NEW', 'ACCEPTED', 'PENDING', 'PREPARING', 'COOKING', 'ALMOST_READY', 'READY'].includes(o.status)
+              );
+              if (active) {
+                s.orderStatus = active.status;
+                if (!s.avatar && active.userAvatar) {
+                  s.avatar = active.userAvatar;
+                }
+              } else {
+                s.orderStatus = null;
+              }
+            } else {
+              s.orderStatus = null;
+            }
+          } catch (e) {
+            s.orderStatus = null;
+          }
+          return s;
+        })
+      );
+
+      setRecentUserSessions(updated);
+    } catch (err) {
+      console.warn('Error syncing real-time user sessions:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRecentSessionsAndStatuses();
+    const interval = setInterval(fetchRecentSessionsAndStatuses, 2000); // Real-time sync every 2 seconds
+    return () => clearInterval(interval);
+  }, [fetchRecentSessionsAndStatuses]);
+
+    // Mode: 'login' | 'register' | 'qr'
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'qr'>('login');
 
   // Camera & QR Scanner States
@@ -123,10 +285,16 @@ export const LoginScreen: React.FC = () => {
 
   // Register Form States
   const [regFullName, setRegFullName] = useState<string>('');
+  const [regDesignation, setRegDesignation] = useState<string>('');
+  const [regDepartment, setRegDepartment] = useState<string>('');
   const [regEmail, setRegEmail] = useState<string>('');
   const [regPhone, setRegPhone] = useState<string>('');
-  const [regPin, setRegPin] = useState<string>('');
-  const [regConfirmPin, setRegConfirmPin] = useState<string>('');
+  const [regPinSuffix, setRegPinSuffix] = useState<string>('');
+  const [regConfirmPinSuffix, setRegConfirmPinSuffix] = useState<string>('');
+  const regPhoneDigits = regPhone.replace(/\D/g, '');
+  const regPhonePrefix = regPhoneDigits.length >= 2 ? regPhoneDigits.slice(-2) : '';
+  const regPin = regPhonePrefix + regPinSuffix;
+  const regConfirmPin = regPhonePrefix + regConfirmPinSuffix;
   const [showRegPin, setShowRegPin] = useState<boolean>(false);
   const [showRegConfirmPin, setShowRegConfirmPin] = useState<boolean>(false);
   const [regErrorMsg, setRegErrorMsg] = useState<string>('');
@@ -153,6 +321,8 @@ export const LoginScreen: React.FC = () => {
   const pinInputRef = useRef<TextInput>(null);
 
   const regFullNameRef = useRef<TextInput>(null);
+  const regDesignationRef = useRef<TextInput>(null);
+  const regDepartmentRef = useRef<TextInput>(null);
   const regEmailRef = useRef<TextInput>(null);
   const regPhoneRef = useRef<TextInput>(null);
   const regPinRef = useRef<TextInput>(null);
@@ -167,7 +337,7 @@ export const LoginScreen: React.FC = () => {
     // 2: Phone Number -> 135
     // 3: Create PIN -> 180
     // 4: Re-enter PIN -> 220
-    const offsets = [50, 90, 135, 180, 220];
+    const offsets = [50, 90, 135, 180, 220, 260, 300];
     const targetY = offsets[fieldIndex] !== undefined ? offsets[fieldIndex] : 80;
     setTimeout(() => {
       scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
@@ -504,25 +674,24 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
-    if (!regPhone.trim()) {
-      setRegErrorMsg('Please enter your 10-digit phone number');
-      return;
-    }
-
-    if (regPhone.trim().length < 10) {
+    const cleanPhoneDigits = regPhone.replace(/\D/g, '');
+    if (!cleanPhoneDigits || cleanPhoneDigits.length < 10) {
       setRegErrorMsg('Please enter a valid 10-digit phone number');
       return;
     }
 
-    if (!regPin.trim() || regPin.trim().length < 4) {
-      setRegErrorMsg('Please create a 4 to 6-digit PIN');
+    const phonePrefix = cleanPhoneDigits.slice(-2);
+    if (!regPinSuffix || regPinSuffix.length < 4) {
+      setRegErrorMsg(`Please enter all 4 digits for PIN (Total 6 digits: ${phonePrefix} + 4 digits)`);
       return;
     }
 
-    if (regPin !== regConfirmPin) {
+    if (regPinSuffix !== regConfirmPinSuffix) {
       setRegErrorMsg('PINs do not match');
       return;
     }
+
+    const fullFinalPin = `${phonePrefix}${regPinSuffix}`;
 
     setRegErrorMsg('');
     setIsSubmitting(true);
@@ -531,8 +700,11 @@ export const LoginScreen: React.FC = () => {
         name: regFullName.trim(),
         email: regEmail.trim(),
         phone: regPhone.trim(),
-        pin: regPin.trim(),
+        pin: fullFinalPin,
         avatar: selectedPhoto,
+        designation: regDesignation.trim(),
+        location: regDepartment.trim(),
+        department: regDepartment.trim(),
       });
       if (!result.success) {
         setRegErrorMsg(result.error || 'Registration failed. Backend returned an error.');
@@ -787,10 +959,11 @@ export const LoginScreen: React.FC = () => {
               </View>
             </View>
           ) : authMode === 'login' ? (
-            <View style={styles.cardWrapper}>
-              <View style={styles.loginCard}>
-                <Text style={styles.cardHeading}>LOGIN</Text>
-                <Text style={styles.cardSubheading}>Enter your unique password to continue</Text>
+            <View style={styles.loginLayoutContainer}>
+              <View style={styles.cardWrapperCenter}>
+                <View style={styles.loginCard}>
+                <Text style={styles.cardHeading}>Login to Canteen Services</Text>
+                <Text style={styles.cardSubheading}>Access your account securely</Text>
 
                 {logoutNotice ? (
                   <View style={styles.logoutSuccessBanner}>
@@ -810,7 +983,7 @@ export const LoginScreen: React.FC = () => {
 
                 {/* Password Input Only (Requirement 13) */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Password</Text>
+                  <Text style={styles.inputLabel}>PIN</Text>
                   <TouchableOpacity
                     style={styles.inputContainer}
                     activeOpacity={1}
@@ -820,7 +993,7 @@ export const LoginScreen: React.FC = () => {
                     <TextInput
                       ref={pinInputRef}
                       style={styles.textInput}
-                      placeholder="Enter your unique password"
+                      placeholder="Enter 6-digit PIN"
                       placeholderTextColor="#9ca3af"
                       autoCapitalize="none"
                       disableFullscreenUI={true}
@@ -848,6 +1021,9 @@ export const LoginScreen: React.FC = () => {
                       />
                     </TouchableOpacity>
                   </TouchableOpacity>
+                  <Text style={styles.pinHelperText}>
+                    Enter the last 2 digits of your mobile number and 4 digits.
+                  </Text>
                 </View>
 
                 {/* Login Button */}
@@ -860,7 +1036,10 @@ export const LoginScreen: React.FC = () => {
                   {isSubmitting ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <Text style={styles.primaryActionButtonText}>LOGIN</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={styles.primaryActionButtonText}>Login</Text>
+                      <AppIcon name="arrow-forward" size={17} color="#ffffff" style={{ marginLeft: 8 }} />
+                    </View>
                   )}
                 </TouchableOpacity>
 
@@ -884,9 +1063,9 @@ export const LoginScreen: React.FC = () => {
                     <AppIcon name="qr-code-outline" size={24} color="#0a3d31" />
                   </View>
                   <View style={styles.qrTextCol}>
-                    <Text style={styles.qrActionTitle}>Scan QR to Login</Text>
+                    <Text style={styles.qrActionTitle}>Scan QR to Continue</Text>
                     <Text style={styles.qrActionSubtitle}>
-                      Scan the lifetime login QR credential sent to your WhatsApp
+                      Use Canteen Services App to login
                     </Text>
                   </View>
                   <AppIcon name="chevron-forward" size={18} color="#0a3d31" />
@@ -917,6 +1096,93 @@ export const LoginScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Right Side Panel - User Profiles with Order Status Bubbles (Only when active officer sessions exist) */}
+            {recentUserSessions.length > 0 ? (
+              <View style={styles.rightSidePanel}>
+                <View style={styles.foodStatusContainer}>
+                  {/* Show Top Chevron only when there are 3+ profiles */}
+                  {recentUserSessions.length > 2 ? (
+                    <TouchableOpacity
+                      style={styles.chevronButton}
+                      onPress={handleProfileScrollUp}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 10, bottom: 10, left: 15, right: 15 }}
+                    >
+                      <AppIcon name="chevron-up" size={22} color="#64748b" />
+                    </TouchableOpacity>
+                  ) : null}
+
+                  {/* Vertical Scrollable Profile List */}
+                  <ScrollView
+                    ref={profileScrollRef}
+                    style={styles.profileScrollView}
+                    contentContainerStyle={styles.profileScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled={true}
+                    onScroll={(e) => setProfileScrollOffset(e.nativeEvent.contentOffset.y)}
+                    scrollEventThrottle={16}
+                  >
+                    {recentUserSessions.map((session, idx) => {
+                      let statusText = 'No active order';
+                      let dotColor = '#10b981';
+
+                      if (session.orderStatus === 'READY') {
+                        statusText = 'Dish is ready!';
+                        dotColor = '#10b981';
+                      } else if (session.orderStatus === 'ALMOST_READY') {
+                        statusText = 'Almost ready';
+                        dotColor = '#0284c7';
+                      } else if (session.orderStatus === 'COOKING' || session.orderStatus === 'ACCEPTED') {
+                        statusText = 'Cooking...';
+                        dotColor = '#f59e0b';
+                      } else if (session.orderStatus === 'PREPARING' || session.orderStatus === 'NEW' || session.orderStatus === 'PENDING') {
+                        statusText = 'Preparing food';
+                        dotColor = '#10b981';
+                      } else {
+                        statusText = 'No active order';
+                        dotColor = '#10b981';
+                      }
+
+                      const avatarUri = session.avatar || 'https://ts3.mm.bing.net/th?id=OIP.ffM33cELiUO4Z0b09vcH0gHaEw&pid=15.1';
+
+                      return (
+                        <TouchableOpacity
+                          key={session.id || session.phone || idx}
+                          style={styles.foodStatusItem}
+                          activeOpacity={0.85}
+                          onPress={() => handleProfileClick(session)}
+                        >
+                          {/* Left: White Pill with Order Status or 'No active order' */}
+                          <View style={styles.foodStatusBubble}>
+                            <Text style={styles.foodStatusText}>{statusText}</Text>
+                          </View>
+
+                          {/* Right: Circular Profile Avatar with Status Dot */}
+                          <View style={styles.foodStatusAvatarWrapper}>
+                            <Image source={{ uri: avatarUri }} style={styles.foodStatusAvatar} />
+                            <View style={[styles.foodStatusDot, { backgroundColor: dotColor }]} />
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Show Bottom Chevron only when there are 3+ profiles */}
+                  {recentUserSessions.length > 2 ? (
+                    <TouchableOpacity
+                      style={styles.chevronButton}
+                      onPress={handleProfileScrollDown}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 10, bottom: 10, left: 15, right: 15 }}
+                    >
+                      <AppIcon name="chevron-down" size={22} color="#64748b" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+          </View>
           ) : (
             /* ==================== REGISTER MODE ==================== */
             <View style={styles.cardWrapper}>
@@ -956,13 +1222,59 @@ export const LoginScreen: React.FC = () => {
                       autoCorrect={false}
                       disableFullscreenUI={true}
                       returnKeyType="next"
-                      onSubmitEditing={() => regEmailRef.current?.focus()}
+                      onSubmitEditing={() => regDesignationRef.current?.focus()}
                       onFocus={() => handleFocusField(0)}
                       onBlur={handleFieldBlur}
                     />
                   </TouchableOpacity>
 
-                  {/* 2. Email Address */}
+                  {/* 2. Designation */}
+                  <TouchableOpacity
+                    style={styles.inputContainerCompact}
+                    activeOpacity={1}
+                    onPress={() => regDesignationRef.current?.focus()}
+                  >
+                    <AppIcon name="briefcase-outline" size={17} color="#4b5563" />
+                    <TextInput
+                      ref={regDesignationRef}
+                      style={styles.textInput}
+                      placeholder="Designation"
+                      placeholderTextColor="#9ca3af"
+                      value={regDesignation}
+                      onChangeText={setRegDesignation}
+                      autoCapitalize="words"
+                      disableFullscreenUI={true}
+                      returnKeyType="next"
+                      onSubmitEditing={() => regDepartmentRef.current?.focus()}
+                      onFocus={() => handleFocusField(1)}
+                      onBlur={handleFieldBlur}
+                    />
+                  </TouchableOpacity>
+
+                  {/* 3. Location/Department */}
+                  <TouchableOpacity
+                    style={styles.inputContainerCompact}
+                    activeOpacity={1}
+                    onPress={() => regDepartmentRef.current?.focus()}
+                  >
+                    <AppIcon name="business-outline" size={17} color="#4b5563" />
+                    <TextInput
+                      ref={regDepartmentRef}
+                      style={styles.textInput}
+                      placeholder="Location"
+                      placeholderTextColor="#9ca3af"
+                      value={regDepartment}
+                      onChangeText={setRegDepartment}
+                      autoCapitalize="words"
+                      disableFullscreenUI={true}
+                      returnKeyType="next"
+                      onSubmitEditing={() => regEmailRef.current?.focus()}
+                      onFocus={() => handleFocusField(2)}
+                      onBlur={handleFieldBlur}
+                    />
+                  </TouchableOpacity>
+
+                  {/* 4. Email Address */}
                   <TouchableOpacity
                     style={styles.inputContainerCompact}
                     activeOpacity={1}
@@ -985,12 +1297,12 @@ export const LoginScreen: React.FC = () => {
                       }}
                       returnKeyType="next"
                       onSubmitEditing={() => regPhoneRef.current?.focus()}
-                      onFocus={() => handleFocusField(1)}
+                      onFocus={() => handleFocusField(3)}
                       onBlur={handleFieldBlur}
                     />
                   </TouchableOpacity>
 
-                  {/* 3. Phone Number */}
+                  {/* 5. Phone Number */}
                   <TouchableOpacity
                     style={styles.inputContainerCompact}
                     activeOpacity={1}
@@ -1012,35 +1324,41 @@ export const LoginScreen: React.FC = () => {
                       maxLength={15}
                       returnKeyType="next"
                       onSubmitEditing={() => regPinRef.current?.focus()}
-                      onFocus={() => handleFocusField(2)}
+                      onFocus={() => handleFocusField(4)}
                       onBlur={handleFieldBlur}
                     />
                   </TouchableOpacity>
 
-                  {/* 4. Create 6-digit PIN */}
+                  {/* 6. Create 6-digit PIN */}
                   <TouchableOpacity
                     style={styles.inputContainerCompact}
                     activeOpacity={1}
                     onPress={() => regPinRef.current?.focus()}
                   >
                     <AppIcon name="lock-closed-outline" size={17} color="#4b5563" />
+                    {regPhonePrefix ? (
+                      <View style={styles.lockedPrefixBadge}>
+                        <Text style={styles.lockedPrefixText}>{regPhonePrefix}</Text>
+                      </View>
+                    ) : null}
                     <TextInput
                       ref={regPinRef}
                       style={styles.textInput}
-                      placeholder="Create 6-digit PIN"
+                      placeholder={regPhonePrefix ? "Enter 4 digits" : "Enter phone number first"}
                       placeholderTextColor="#9ca3af"
                       keyboardType="numeric"
                       disableFullscreenUI={true}
                       secureTextEntry={!showRegPin}
-                      value={regPin}
+                      value={regPinSuffix}
                       onChangeText={(val) => {
-                        setRegPin(val);
+                        const clean = val.replace(/\D/g, '').slice(0, 4);
+                        setRegPinSuffix(clean);
                         if (regErrorMsg) setRegErrorMsg('');
                       }}
-                      maxLength={6}
+                      maxLength={4}
                       returnKeyType="next"
                       onSubmitEditing={() => regConfirmPinRef.current?.focus()}
-                      onFocus={() => handleFocusField(3)}
+                      onFocus={() => handleFocusField(5)}
                       onBlur={handleFieldBlur}
                     />
                     <TouchableOpacity
@@ -1057,30 +1375,36 @@ export const LoginScreen: React.FC = () => {
                     </TouchableOpacity>
                   </TouchableOpacity>
 
-                  {/* 5. Re-enter PIN */}
+                  {/* 7. Re-enter PIN */}
                   <TouchableOpacity
                     style={styles.inputContainerCompact}
                     activeOpacity={1}
                     onPress={() => regConfirmPinRef.current?.focus()}
                   >
                     <AppIcon name="lock-closed-outline" size={17} color="#4b5563" />
+                    {regPhonePrefix ? (
+                      <View style={styles.lockedPrefixBadge}>
+                        <Text style={styles.lockedPrefixText}>{regPhonePrefix}</Text>
+                      </View>
+                    ) : null}
                     <TextInput
                       ref={regConfirmPinRef}
                       style={styles.textInput}
-                      placeholder="Re-enter PIN"
+                      placeholder={regPhonePrefix ? "Re-enter 4 digits" : "Enter phone number first"}
                       placeholderTextColor="#9ca3af"
                       keyboardType="numeric"
                       disableFullscreenUI={true}
                       secureTextEntry={!showRegConfirmPin}
-                      value={regConfirmPin}
+                      value={regConfirmPinSuffix}
                       onChangeText={(val) => {
-                        setRegConfirmPin(val);
+                        const clean = val.replace(/\D/g, '').slice(0, 4);
+                        setRegConfirmPinSuffix(clean);
                         if (regErrorMsg) setRegErrorMsg('');
                       }}
-                      maxLength={6}
+                      maxLength={4}
                       returnKeyType="done"
                       onSubmitEditing={handleRegister}
-                      onFocus={() => handleFocusField(4)}
+                      onFocus={() => handleFocusField(6)}
                       onBlur={handleFieldBlur}
                     />
                     <TouchableOpacity
@@ -1640,11 +1964,11 @@ const styles = StyleSheet.create({
   },
   registerMainCardStacked: {
     flexDirection: 'column',
-    maxWidth: 440,
   },
   registerFormCol: {
     flex: 1.15,
-    width: '100%',
+    maxWidth: 360,
+    paddingRight: 20,
   },
   cardHeadingLeft: {
     fontSize: 22,
@@ -1660,16 +1984,50 @@ const styles = StyleSheet.create({
     marginTop: 3,
     marginBottom: 14,
   },
+  inputContainerStacked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    maxWidth: 340,
+  },
+  inputIconCol: {
+    width: 32,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  inputDataCol: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  inputLabelSmall: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0a3d31',
+    marginBottom: 2,
+  },
+  textInputStacked: {
+    fontSize: 13,
+    color: '#111827',
+    padding: 0,
+    margin: 0,
+    height: 20,
+  },
   inputContainerCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 40,
+    height: 48,
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 8,
     backgroundColor: '#ffffff',
     paddingHorizontal: 12,
-    marginBottom: 10,
+    marginBottom: 14,
   },
 
   /* Register Right Column */
@@ -1697,16 +2055,17 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   registerRightEmblem: {
-    width: 200,
-    height: 250,
-    opacity: 0.45,
+    width: 240,
+    height: 280,
+    opacity: 0.85,
+    resizeMode: 'contain',
   },
   emblemHintText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94a3b8',
     textAlign: 'center',
     marginTop: 10,
-    maxWidth: 180,
+    paddingHorizontal: 10,
   },
 
   /* Photo Picker State */
@@ -2545,4 +2904,194 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
+
+  loginLayoutContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardWrapperCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  rightSidePanel: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 280,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingRight: 40,
+    display: 'flex',
+  },
+  quickLoginProfileCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    width: 200,
+    marginBottom: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  quickLoginAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: '#0a3d31',
+  },
+  quickLoginInfo: {
+    alignItems: 'center',
+  },
+  quickLoginName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  quickLoginStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10b981',
+    marginRight: 6,
+  },
+  quickLoginStatus: {
+    fontSize: 12,
+    color: '#4b5563',
+    fontWeight: '500',
+  },
+  tapToLoginText: {
+    fontSize: 11,
+    color: '#0a3d31',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  foodStatusContainer: {
+    alignItems: 'flex-end',
+    maxHeight: 480,
+  },
+  chevronButton: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  profileScrollView: {
+    maxHeight: 340,
+    width: '100%',
+  },
+  profileScrollContent: {
+    alignItems: 'flex-end',
+    paddingVertical: 6,
+    gap: 14,
+  },
+  foodStatusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  foodStatusBubble: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  foodStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  foodStatusAvatarWrapper: {
+    position: 'relative',
+    width: 48,
+    height: 48,
+  },
+  foodStatusAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  foodStatusDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  foodStatusEmpty: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  foodStatusEmptyText: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  lockedPrefixBadge: {
+    backgroundColor: '#e6f4ea',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    marginRight: 6,
+    marginLeft: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockedPrefixText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0a3d31',
+    letterSpacing: 0.5,
+  },
+  pinHelperText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 6,
+    lineHeight: 16,
+  },
+
 });

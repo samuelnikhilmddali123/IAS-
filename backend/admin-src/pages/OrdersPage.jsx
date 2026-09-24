@@ -186,27 +186,32 @@ export const OrdersPage = ({ orders, onUpdateOrderStatus }) => {
                     </button>
                   )}
 
-                  {status === 'PREPARING' && (
-                    <button
-                      type="button"
-                      className="btn-primary btn-sm"
-                      style={{ flex: 1, justifyContent: 'center', background: '#16a34a' }}
-                      onClick={() => onUpdateOrderStatus(orderId, 'READY')}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    background: '#f8fafc',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    width: '100%'
+                  }}>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>Food Status (Managed by KOT)</span>
+                    <a
+                      href="/admin/kot"
+                      style={{
+                        fontSize: '12px',
+                        color: '#0a3d31',
+                        fontWeight: '700',
+                        textDecoration: 'none',
+                        background: '#e0f2fe',
+                        padding: '4px 10px',
+                        borderRadius: '6px'
+                      }}
                     >
-                      🔔 MARK READY
-                    </button>
-                  )}
-
-                  {status === 'READY' && (
-                    <button
-                      type="button"
-                      className="btn-primary btn-sm"
-                      style={{ flex: 1, justifyContent: 'center', background: '#0a3d31' }}
-                      onClick={() => onUpdateOrderStatus(orderId, 'COMPLETED')}
-                    >
-                      ✓ MARK COMPLETED
-                    </button>
-                  )}
+                      Open KOT →
+                    </a>
+                  </div>
 
                   {status !== 'COMPLETED' && status !== 'CANCELLED' && (
                     <button

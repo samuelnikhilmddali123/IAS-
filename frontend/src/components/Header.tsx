@@ -119,7 +119,7 @@ export const Header: React.FC = () => {
             />
             <View style={styles.profileTextCol}>
               <Text style={styles.officerName}>{userProfile.name || 'Officer'}</Text>
-              <Text style={styles.officerRole}>{userProfile.department || userProfile.designation || 'Cabinet Secretariat'}</Text>
+              <Text style={styles.officerRole}>{userProfile.designation || 'Officer'}</Text>
             </View>
             <AppIcon name="chevron-down" size={14} color="#64748b" style={{ marginLeft: 6 }} />
           </TouchableOpacity>

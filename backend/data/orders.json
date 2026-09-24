@@ -1,659 +1,61 @@
 [
   {
-    "id": "ord-1789985315090",
-    "orderNumber": "ORD-2026-61327",
-    "userId": "6ab0ffe9c8485d8213b46ab9",
-    "userName": "Konapala Saikiran",
-    "userPhone": "9515604971",
+    "id": "ord-1790242267013",
+    "orderNumber": "ORD-2026-38628",
+    "userId": "6ab4d44cb8b24f4735205595",
+    "userName": "Varun",
+    "userPhone": "9917595999",
     "userAvatar": "",
     "items": [
       {
-        "foodId": "6aae2eda0d4786f9968200c5",
-        "id": "6aae2eda0d4786f9968200c5",
-        "name": "Dal Khichdi & Papad",
+        "foodId": "6ab24677ee4bc3af55fe7100",
+        "id": "6ab24677ee4bc3af55fe7100",
+        "name": "Phulka & Paneer Butter Masala",
+        "quantity": 2,
+        "price": 85,
+        "total": 170,
+        "image": "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=500&q=80"
+      },
+      {
+        "foodId": "6ab24676ee4bc3af55fe70fb",
+        "id": "6ab24676ee4bc3af55fe70fb",
+        "name": "Curd Rice",
         "quantity": 1,
-        "price": 55,
-        "total": 55,
+        "price": 40,
+        "total": 40,
         "image": "https://images.unsplash.com/photo-1546833998-877b37c2e5c6?auto=format&fit=crop&w=500&q=80"
+      },
+      {
+        "foodId": "6ab24676ee4bc3af55fe70f8",
+        "id": "6ab24676ee4bc3af55fe70f8",
+        "name": "South Indian Thali",
+        "quantity": 1,
+        "price": 80,
+        "total": 80,
+        "image": "https://images.unsplash.com/photo-1610057099443-fde8c4d50f91?auto=format&fit=crop&w=500&q=80"
       }
     ],
-    "subtotal": 55,
-    "totalAmount": 55,
+    "subtotal": 290,
+    "totalAmount": 290,
     "paymentMethod": "restaurant_qr",
     "paymentStatus": "UNPAID",
     "orderNote": "",
     "mealSlot": "General",
     "status": "PREPARING",
-    "tokenNumber": 98,
-    "createdAt": "2026-09-21T10:08:35.090Z"
+    "tokenNumber": 65,
+    "createdAt": "2026-09-24T09:31:07.013Z"
   },
   {
-    "id": "ord-1789984464417",
-    "orderNumber": "ORD-2026-85491",
-    "userId": "6ab0fecac8485d8213b46ab5",
-    "userName": "Dr. Vivek Agnihotri, IAS",
-    "userPhone": "9884458280",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 3,
-        "price": 60,
-        "total": 180,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 180,
-    "totalAmount": 180,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "Order #2 for second session",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 70,
-    "createdAt": "2026-09-21T09:54:24.417Z"
-  },
-  {
-    "id": "ord-1789984459800",
-    "orderNumber": "ORD-2026-19929",
-    "userId": "6ab0fecac8485d8213b46ab5",
-    "userName": "Dr. Vivek Agnihotri, IAS",
-    "userPhone": "9884458280",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "Less spicy please",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 45,
-    "createdAt": "2026-09-21T09:54:19.800Z"
-  },
-  {
-    "id": "ord-1789984432822",
-    "orderNumber": "ORD-2026-57200",
-    "userId": "6ab0feadc8485d8213b46ab1",
-    "userName": "Officer A (IAS)",
-    "userPhone": "9884429487",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 1,
-        "price": 60,
-        "total": 60,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 60,
-    "totalAmount": 60,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "Jump test order",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 87,
-    "createdAt": "2026-09-21T09:53:52.822Z"
-  },
-  {
-    "id": "ord-1789984432778",
-    "orderNumber": "ORD-2026-99736",
-    "userId": "6ab0feadc8485d8213b46ab1",
-    "userName": "Officer A (IAS)",
-    "userPhone": "9884429487",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "Urgent meeting order",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 81,
-    "createdAt": "2026-09-21T09:53:52.778Z"
-  },
-  {
-    "id": "ord-1789984416586",
-    "orderNumber": "ORD-2026-45782",
-    "userId": "6ab0fe9ac8485d8213b46aad",
-    "userName": "Dr. Vivek Agnihotri, IAS",
-    "userPhone": "9884409984",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 3,
-        "price": 60,
-        "total": 180,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 180,
-    "totalAmount": 180,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "Order #2 for second session",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 12,
-    "createdAt": "2026-09-21T09:53:36.586Z"
-  },
-  {
-    "id": "ord-1789984411960",
-    "orderNumber": "ORD-2026-80979",
-    "userId": "6ab0fe9ac8485d8213b46aad",
-    "userName": "Dr. Vivek Agnihotri, IAS",
-    "userPhone": "9884409984",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "Less spicy please",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 50,
-    "createdAt": "2026-09-21T09:53:31.960Z"
-  },
-  {
-    "id": "ord-1789983453082",
-    "orderNumber": "ORD-2026-40719",
-    "userId": "6ab0cc6897c5200fbdb754bc",
-    "userName": "vani prasad",
+    "id": "ord-1790242140969",
+    "orderNumber": "ORD-2026-71752",
+    "userId": "6ab4d44cb8b24f4735205595",
+    "userName": "Varun",
     "userPhone": "9917595999",
     "userAvatar": "",
     "items": [
       {
-        "foodId": "6aae2eda0d4786f9968200b7",
-        "id": "6aae2eda0d4786f9968200b7",
-        "name": "Idli (2 pcs)",
-        "quantity": 1,
-        "price": 25,
-        "total": 25,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 25,
-    "totalAmount": 25,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 43,
-    "createdAt": "2026-09-21T09:37:33.082Z"
-  },
-  {
-    "id": "ord-1789983273246",
-    "orderNumber": "ORD-2026-31229",
-    "userId": "6ab0cc6897c5200fbdb754bc",
-    "userName": "vani prasad",
-    "userPhone": "9917595999",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200be",
-        "id": "6aae2eda0d4786f9968200be",
-        "name": "Veg Dum Biryani",
-        "quantity": 1,
-        "price": 90,
-        "total": 90,
-        "image": "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 90,
-    "totalAmount": 90,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 15,
-    "createdAt": "2026-09-21T09:34:33.246Z"
-  },
-  {
-    "id": "ord-1789982344713",
-    "orderNumber": "ORD-2026-97376",
-    "userId": "6ab0d50037e238fdf091c221",
-    "userName": "Dr. Rajesh Sharma, IAS",
-    "userPhone": "9999912345",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 3,
-        "price": 60,
-        "total": 180,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 180,
-    "totalAmount": 180,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "Send invoice to registered WhatsApp",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 18,
-    "createdAt": "2026-09-21T09:19:04.713Z"
-  },
-  {
-    "id": "ord-1789982340182",
-    "orderNumber": "ORD-2026-73240",
-    "userId": "6ab0d50037e238fdf091c221",
-    "userName": "Dr. Rajesh Sharma, IAS",
-    "userPhone": "9999912345",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "High priority VIP order, less spicy",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 20,
-    "createdAt": "2026-09-21T09:19:00.182Z"
-  },
-  {
-    "id": "ord-1789982333022",
-    "orderNumber": "ORD-2026-71471",
-    "userId": "6ab0f67cca56ab910ed1ea19",
-    "userName": "Officer A (IAS)",
-    "userPhone": "9882332603",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 1,
-        "price": 60,
-        "total": 60,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 60,
-    "totalAmount": 60,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "Jump test order",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 45,
-    "createdAt": "2026-09-21T09:18:53.022Z"
-  },
-  {
-    "id": "ord-1789982332912",
-    "orderNumber": "ORD-2026-31514",
-    "userId": "6ab0f67cca56ab910ed1ea19",
-    "userName": "Officer A (IAS)",
-    "userPhone": "9882332603",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "Urgent meeting order",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 43,
-    "createdAt": "2026-09-21T09:18:52.912Z"
-  },
-  {
-    "id": "ord-1789982276279",
-    "orderNumber": "ORD-2026-98488",
-    "userId": "6ab0f643ca56ab910ed1ea15",
-    "userName": "Officer A (IAS)",
-    "userPhone": "9882275795",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 1,
-        "price": 60,
-        "total": 60,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 60,
-    "totalAmount": 60,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "Jump test order",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 25,
-    "createdAt": "2026-09-21T09:17:56.279Z"
-  },
-  {
-    "id": "ord-1789982276156",
-    "orderNumber": "ORD-2026-10524",
-    "userId": "6ab0f643ca56ab910ed1ea15",
-    "userName": "Officer A (IAS)",
-    "userPhone": "9882275795",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "Urgent meeting order",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 64,
-    "createdAt": "2026-09-21T09:17:56.157Z"
-  },
-  {
-    "id": "ord-1789975019043",
-    "orderNumber": "ORD-2026-10033",
-    "userId": "6aae35732767c84e4aa9e211",
-    "userName": "suryakumari",
-    "userPhone": "9908178198",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200b8",
-        "id": "6aae2eda0d4786f9968200b8",
-        "name": "Masala Dosa",
-        "quantity": 1,
-        "price": 50,
-        "total": 50,
-        "image": "https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 50,
-    "totalAmount": 50,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 18,
-    "createdAt": "2026-09-21T07:16:59.043Z"
-  },
-  {
-    "id": "ord-1789974783061",
-    "orderNumber": "ORD-2026-14960",
-    "userId": "6aae35732767c84e4aa9e211",
-    "userName": "suryakumari",
-    "userPhone": "9908178198",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 1,
-        "price": 60,
-        "total": 60,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 60,
-    "totalAmount": 60,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 34,
-    "createdAt": "2026-09-21T07:13:03.061Z"
-  },
-  {
-    "id": "ord-1789974263890",
-    "orderNumber": "ORD-2026-18228",
-    "userId": "6ab0d50037e238fdf091c221",
-    "userName": "Dr. Rajesh Sharma, IAS",
-    "userPhone": "9999912345",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 3,
-        "price": 60,
-        "total": 180,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 180,
-    "totalAmount": 180,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "Send invoice to registered WhatsApp",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 12,
-    "createdAt": "2026-09-21T07:04:23.890Z"
-  },
-  {
-    "id": "ord-1789974259359",
-    "orderNumber": "ORD-2026-72803",
-    "userId": "6ab0d50037e238fdf091c221",
-    "userName": "Dr. Rajesh Sharma, IAS",
-    "userPhone": "9999912345",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "High priority VIP order, less spicy",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 10,
-    "createdAt": "2026-09-21T07:04:19.359Z"
-  },
-  {
-    "id": "ord-1789973808645",
-    "orderNumber": "ORD-2026-92033",
-    "userId": "6ab0d50037e238fdf091c221",
-    "userName": "Dr. Rajesh Sharma, IAS",
-    "userPhone": "9999912345",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 3,
-        "price": 60,
-        "total": 180,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 180,
-    "totalAmount": 180,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "Send invoice to registered WhatsApp",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 11,
-    "createdAt": "2026-09-21T06:56:48.645Z"
-  },
-  {
-    "id": "ord-1789973804125",
-    "orderNumber": "ORD-2026-51503",
-    "userId": "6ab0d50037e238fdf091c221",
-    "userName": "Dr. Rajesh Sharma, IAS",
-    "userPhone": "9999912345",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "High priority VIP order, less spicy",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 76,
-    "createdAt": "2026-09-21T06:56:44.125Z"
-  },
-  {
-    "id": "ord-1789973760554",
-    "orderNumber": "ORD-2026-78846",
-    "userId": "6ab0d50037e238fdf091c221",
-    "userName": "Dr. Rajesh Sharma, IAS",
-    "userPhone": "9999912345",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6aae2eda0d4786f9968200c6",
-        "id": "6aae2eda0d4786f9968200c6",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 2,
-        "price": 60,
-        "total": 120,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 120,
-    "totalAmount": 120,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "High priority VIP order, less spicy",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 88,
-    "createdAt": "2026-09-21T06:56:00.554Z"
-  },
-  {
-    "id": "ord-1789971595196",
-    "orderNumber": "ORD-2026-44031",
-    "userId": "GOI-DL-2026-3448",
-    "userName": "vani prasad",
-    "userPhone": "+91 88854 41222",
-    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ7kvtYo4JSw0yii1g3JP_I2akjcdLC4kVEzOeSHBlecg&s=10",
-    "items": [
-      {
-        "foodId": "food-b4",
-        "id": "food-b4",
-        "name": "Pongal",
-        "quantity": 1,
-        "price": 35,
-        "total": 35,
-        "image": "https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 35,
-    "totalAmount": 35,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "LUNCH",
-    "status": "PREPARING",
-    "tokenNumber": 11,
-    "createdAt": "2026-09-21T06:19:55.196Z"
-  },
-  {
-    "id": "ord-1789911126985",
-    "orderNumber": "ORD-2026-21592",
-    "userId": "GOI-DL-2026-7529",
-    "userName": "Shashibhushan kumar",
-    "userPhone": "+91 8978765897",
-    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ1wox8Erkvjopov8SWuwaXajl60TEwz8hJO2cE4FVOIA&s=10",
-    "items": [
-      {
-        "foodId": "food-d1",
-        "id": "food-d1",
+        "foodId": "6ab24677ee4bc3af55fe7100",
+        "id": "6ab24677ee4bc3af55fe7100",
         "name": "Phulka & Paneer Butter Masala",
         "quantity": 1,
         "price": 85,
@@ -664,195 +66,39 @@
     "subtotal": 85,
     "totalAmount": 85,
     "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
+    "paymentStatus": "UNPAID",
     "orderNote": "",
-    "mealSlot": "LUNCH",
-    "status": "PREPARING",
-    "tokenNumber": 10,
-    "createdAt": "2026-09-20T13:32:06.985Z"
-  },
-  {
-    "id": "ord-1789911014152",
-    "orderNumber": "ORD-2026-77409",
-    "userId": "GOI-DL-2026-7529",
-    "userName": "Shashibhushan kumar",
-    "userPhone": "+91 8978765897",
-    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ1wox8Erkvjopov8SWuwaXajl60TEwz8hJO2cE4FVOIA&s=10",
-    "items": [
-      {
-        "foodId": "food-b2",
-        "id": "food-b2",
-        "name": "Masala Dosa",
-        "quantity": 1,
-        "price": 50,
-        "total": 50,
-        "image": "https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 50,
-    "totalAmount": 50,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "LUNCH",
-    "status": "PREPARING",
-    "tokenNumber": 87,
-    "createdAt": "2026-09-20T13:30:14.152Z"
-  },
-  {
-    "id": "ord-1789908634551",
-    "orderNumber": "ORD-2026-91367",
-    "userId": "GOI-DL-2026-5353",
-    "userName": "ambani",
-    "userPhone": "+91 8099667999",
-    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQM7mNs5H9WW-pCOAnI7UxgiFEsJFr1jpatp8LxHg3v4g&s=10",
-    "items": [
-      {
-        "foodId": "food-s3",
-        "id": "food-s3",
-        "name": "South Indian Filter Coffee",
-        "quantity": 1,
-        "price": 20,
-        "total": 20,
-        "image": "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 20,
-    "totalAmount": 20,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "LUNCH",
-    "status": "PREPARING",
-    "tokenNumber": 14,
-    "createdAt": "2026-09-20T12:50:34.551Z"
-  },
-  {
-    "id": "ord-1789907706489",
-    "orderNumber": "ORD-2026-15696",
-    "userId": "GOI-DL-2026-5353",
-    "userName": "ambani",
-    "userPhone": "+91 8099667999",
-    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQM7mNs5H9WW-pCOAnI7UxgiFEsJFr1jpatp8LxHg3v4g&s=10",
-    "items": [
-      {
-        "foodId": "food-d3",
-        "id": "food-d3",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 1,
-        "price": 60,
-        "total": 60,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      },
-      {
-        "foodId": "food-d2",
-        "id": "food-d2",
-        "name": "Dal Khichdi & Papad",
-        "quantity": 1,
-        "price": 55,
-        "total": 55,
-        "image": "https://images.unsplash.com/photo-1546833998-877b37c2e5c6?auto=format&fit=crop&w=500&q=80"
-      },
-      {
-        "foodId": "food-d1",
-        "id": "food-d1",
-        "name": "Phulka & Paneer Butter Masala",
-        "quantity": 1,
-        "price": 85,
-        "total": 85,
-        "image": "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 200,
-    "totalAmount": 200,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "LUNCH",
-    "status": "PREPARING",
-    "tokenNumber": 93,
-    "createdAt": "2026-09-20T12:35:06.489Z"
-  },
-  {
-    "id": "ord-1789900250216",
-    "orderNumber": "ORD-2026-14836",
-    "userId": "GOI-DL-2026-3202",
-    "userName": "Lakshmisha",
-    "userPhone": "+91 9917595999",
-    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS5tRGLO7Rk-FwIQXWx1OY7gwNsd3Y0qnFIjbs3ZxEy0w&s=10",
-    "items": [
-      {
-        "foodId": "food-d3",
-        "id": "food-d3",
-        "name": "Chapati with Mixed Veg Curry",
-        "quantity": 1,
-        "price": 60,
-        "total": 60,
-        "image": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 60,
-    "totalAmount": 60,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "PAYMENT_PENDING",
-    "orderNote": "",
-    "mealSlot": "LUNCH",
-    "status": "PREPARING",
-    "tokenNumber": 89,
-    "createdAt": "2026-09-20T10:30:50.216Z"
-  },
-  {
-    "id": "ord-1789778230887",
-    "orderNumber": "ORD-2026-73997",
-    "userId": "GOI-DL-9876",
-    "userName": "Shri Rajesh Verma IAS",
-    "userPhone": "9876543210",
-    "userAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
-    "items": [
-      {
-        "id": "food-l1",
-        "name": "Executive South Indian Lunch",
-        "price": 95,
-        "quantity": 1
-      }
-    ],
-    "subtotal": 95,
-    "totalAmount": 95,
-    "paymentMethod": "online",
-    "orderNote": "",
-    "mealSlot": "LUNCH",
+    "mealSlot": "General",
     "status": "PREPARING",
     "tokenNumber": 49,
-    "createdAt": "2026-09-19T00:37:10.887Z"
+    "createdAt": "2026-09-24T09:29:00.969Z"
   },
   {
-    "id": "ord-1789776889390",
-    "orderNumber": "ORD-2026-78797",
-    "userId": "usr-1789776889365",
-    "userName": "Neerabh Kumar Prasad",
-    "userPhone": "9876543210",
-    "userAvatar": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmaCfngRk2QYBYQ5xANia8WFZMVRN0QkjjFTcio1DtHA&s=10",
+    "id": "ord-1790241540368",
+    "orderNumber": "ORD-2026-30846",
+    "userId": "6ab4d44cb8b24f4735205595",
+    "userName": "Varun",
+    "userPhone": "9917595999",
+    "userAvatar": "",
     "items": [
       {
-        "id": "food-b1",
-        "name": "Idli (2 pcs)",
-        "price": 25,
-        "quantity": 2
-      },
-      {
-        "id": "food-s3",
-        "name": "South Indian Filter Coffee",
-        "price": 20,
-        "quantity": 1
+        "foodId": "6ab24677ee4bc3af55fe70ff",
+        "id": "6ab24677ee4bc3af55fe70ff",
+        "name": "Masala Chai",
+        "quantity": 1,
+        "price": 15,
+        "total": 15,
+        "image": "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=500&q=80"
       }
     ],
-    "subtotal": 70,
-    "totalAmount": 70,
-    "paymentMethod": "online",
-    "orderNote": "Less spicy sambar please",
-    "mealSlot": "Breakfast",
+    "subtotal": 15,
+    "totalAmount": 15,
+    "paymentMethod": "restaurant_qr",
+    "paymentStatus": "UNPAID",
+    "orderNote": "",
+    "mealSlot": "General",
     "status": "PREPARING",
-    "tokenNumber": 91,
-    "createdAt": "2026-09-19T00:14:49.390Z"
+    "tokenNumber": 16,
+    "createdAt": "2026-09-24T09:19:00.368Z"
   }
 ]

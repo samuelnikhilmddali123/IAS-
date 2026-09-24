@@ -209,16 +209,17 @@ async function sendQrMessage({ to, userName, qrImage, qrDataUrl, qrPayload, expi
   const recipientJid = formatWhatsAppJid(cleanTo);
 
   const messageText = [
-    `🏛️ *Central Government Canteen Services*`,
-    `*Good Food. Greater Service.*`,
+    `*Canteen Services Login QR*`,
     ``,
     `Dear Officer *${userName || 'IAS Officer'}*,`,
-    `Your officer account has been registered successfully in the Canteen Services portal.`,
     ``,
-    `📸 *Login QR Code:* Scan the attached QR image using the live camera on the app login screen to securely authenticate.`,
+    `Your Canteen Services account has been registered successfully.`,
     ``,
-    `♾️ *Validity:* Lifetime Access (Secure Officer Login QR)`,
-    `🔒 Sent securely from Admin Desk (*${fromNumber}*). Keep confidential.`,
+    `Please use the attached Login QR Code with the Canteen Services App to securely authenticate.`,
+    ``,
+    `Do not share this QR code with anyone.`,
+    ``,
+    `— Canteen Services Admin Desk`
   ].join('\n');
 
   const dispatchRecord = {
@@ -241,7 +242,18 @@ async function sendQrMessage({ to, userName, qrImage, qrDataUrl, qrPayload, expi
   if (waSocket && connectionStatus === 'CONNECTED') {
     try {
       let imageBuffer = null;
-      if (qrDataUrl) {
+      
+      // Attempt to load the beautiful generated card from disk
+      if (qrImage) {
+        // qrImage is e.g. "/uploads/qr/qr_123.png", so we resolve it from backend root
+        const fullPath = path.join(__dirname, '../..', qrImage);
+        if (fs.existsSync(fullPath)) {
+          imageBuffer = fs.readFileSync(fullPath);
+        }
+      }
+      
+      // Fallback to raw QR code Data URL
+      if (!imageBuffer && qrDataUrl) {
         const base64Data = qrDataUrl.replace(/^data:image\/\w+;base64,/, '');
         imageBuffer = Buffer.from(base64Data, 'base64');
       }

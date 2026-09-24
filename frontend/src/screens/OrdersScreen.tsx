@@ -44,7 +44,7 @@ export const OrdersScreen: React.FC = () => {
   // ==========================================
   // ACTION 1: CHECKOUT HANDLER
   // ==========================================
-  const handleCheckoutClick = async () => {
+  const handleCheckoutClick = () => {
     if (cart.length === 0) {
       setErrorMessage('Your cart is empty. Please add items from the menu.');
       return;
@@ -54,21 +54,15 @@ export const OrdersScreen: React.FC = () => {
     setIsSubmitting(true);
     setActiveActionType('checkout');
 
-    try {
-      const result = await checkoutCart();
-      if (result.success) {
-        // Requirement 1 & 2: Automatic logout upon success, no extra modal or logout button
-        clearCart();
-        logout();
-      } else {
-        setErrorMessage(result.error || 'Failed to send order to kitchen. Please try again.');
-      }
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to connect to backend server.');
-    } finally {
-      setIsSubmitting(false);
-      setActiveActionType(null);
-    }
+    // Fire and forget checkout to ensure immediate logout
+    checkoutCart().catch(err => console.error(err));
+
+    // Immediately clear cart and log out
+    clearCart();
+    logout();
+    
+    setIsSubmitting(false);
+    setActiveActionType(null);
   };
 
   // ==========================================
@@ -380,9 +374,9 @@ export const OrdersScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Exactly TWO Main Actions (Requirement 2, 12, 17) */}
+            {/* Primary Checkout Action */}
             <View style={styles.actionsSection}>
-              {/* 1. CHECKOUT BUTTON */}
+              {/* CHECKOUT BUTTON */}
               <TouchableOpacity
                 style={[
                   styles.checkoutBtn,
@@ -406,32 +400,6 @@ export const OrdersScreen: React.FC = () => {
 
               <Text style={styles.actionSubtext}>
                 Sends order directly to kitchen queue (Status: NEW) & logs out.
-              </Text>
-
-              {/* 2. GENERATE BILL BUTTON */}
-              <TouchableOpacity
-                style={[
-                  styles.generateBillBtn,
-                  (cart.length === 0 || isSubmitting) && styles.btnDisabled,
-                ]}
-                disabled={cart.length === 0 || isSubmitting}
-                onPress={handleGenerateBillClick}
-                activeOpacity={0.85}
-              >
-                {isSubmitting && activeActionType === 'bill' ? (
-                  <ActivityIndicator size="small" color="#0c3527" style={{ marginRight: 8 }} />
-                ) : (
-                  <AppIcon name="receipt-outline" size={17} color="#0c3527" style={{ marginRight: 8 }} />
-                )}
-                <Text style={styles.generateBillBtnText}>
-                  {isSubmitting && activeActionType === 'bill'
-                    ? 'GENERATING BILL...'
-                    : 'GENERATE BILL'}
-                </Text>
-              </TouchableOpacity>
-
-              <Text style={styles.actionSubtext}>
-                Dispatches bill & Restaurant QR code to your registered mobile & logs out.
               </Text>
             </View>
           </View>

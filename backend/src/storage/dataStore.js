@@ -457,6 +457,20 @@ const dataStore = {
     }
   },
 
+
+  updateUserProfile(userId, updates) {
+    const users = readJSON(USERS_FILE);
+    const idx = users.findIndex(u => u.id === userId || u.officerId === userId || String(u._id) === userId);
+    if (idx === -1) return null;
+    if (updates.name) users[idx].name = updates.name;
+    if (updates.designation) users[idx].designation = updates.designation;
+    if (updates.location) users[idx].location = updates.location;
+    if (updates.avatar) users[idx].avatar = updates.avatar;
+    users[idx].updatedAt = new Date().toISOString();
+    writeJSON(USERS_FILE, users);
+    return users[idx];
+  },
+
   updateUserPhone(userId, newPhone) {
     const users = readJSON(USERS_FILE);
     const idx = users.findIndex(u => u.id === userId || u.officerId === userId || String(u._id) === userId);
@@ -529,6 +543,11 @@ const dataStore = {
     orders.unshift(newOrder);
     writeJSON(ORDERS_FILE, orders);
     return newOrder;
+  },
+
+  getOrderById(orderId) {
+    const orders = readJSON(ORDERS_FILE);
+    return orders.find(o => o.id === orderId || o.orderNumber === orderId || String(o._id) === orderId) || null;
   },
 
   updateOrderStatus(orderId, status) {

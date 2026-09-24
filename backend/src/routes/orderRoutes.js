@@ -8,7 +8,8 @@ const {
   updatePaymentStatus,
   getUnpaidOrders,
   getRestaurantPaymentQr,
-  getAdminStats
+  getAdminStats,
+  getLiveOrders
 } = require('../services/orderService');
 
 const router = express.Router();
@@ -62,6 +63,16 @@ router.get('/restaurant-qr', async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+});
+
+// Get live active orders for public display
+router.get('/live-status', async (req, res) => {
+  try {
+    const orders = await getLiveOrders();
+    res.status(200).json({ success: true, orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -207,6 +218,69 @@ router.put('/admin/:id/payment-status', handlePaymentStatusUpdate);
 router.put('/:id/payment-status', handlePaymentStatusUpdate);
 router.patch('/admin/:id/payment-status', handlePaymentStatusUpdate);
 router.patch('/:id/payment-status', handlePaymentStatusUpdate);
+
+// Batch Pay Multiple Orders (Combined Daily Bills)
+router.post('/pay-batch', userAuth, async (req, res) => {
+  try {
+    const { orderIds } = req.body;
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'orderIds array is required' });
+    }
+    const results = [];
+    for (const id of orderIds) {
+      try {
+        const updated = await updatePaymentStatus(id, 'PAID');
+        if (updated) results.push(updated);
+      } catch (e) {}
+    }
+    res.status(200).json({
+      success: true,
+      message: `Combined payment completed for ${results.length} order(s). Thank you!`,
+      orders: results
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Batch Send Combined Restaurant QR & Bill to WhatsApp
+router.post('/send-batch-payment-qr', userAuth, async (req, res) => {
+  try {
+    const { orderIds, totalAmount } = req.body;
+    const authService = require('../services/authService');
+    const whatsappService = require('../services/whatsappService');
+
+    const dbUser = await authService.getUserById(req.user.id);
+    const registeredMobile = (dbUser?.phone || dbUser?.mobile || '').trim();
+    if (!registeredMobile || registeredMobile.replace(/\D/g, '').length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Officer does not have a registered mobile number in the central database.'
+      });
+    }
+
+    const qrData = await getRestaurantPaymentQr(Number(totalAmount) || 0, orderIds || []);
+
+    try {
+      if (whatsappService && whatsappService.sendQrCardImage) {
+        await whatsappService.sendQrCardImage(
+          registeredMobile,
+          qrData.qrDataUrl,
+          `Official Canteen Bill: Today's Combined Payment for ${(orderIds || []).length} Order(s). Total: Rs.${totalAmount}`
+        );
+      }
+    } catch (e) {}
+
+    res.status(200).json({
+      success: true,
+      registeredMobile,
+      qrDataUrl: qrData.qrDataUrl,
+      upiId: qrData.upiId
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Customer Pay Order (Requirement 9 & 10: payment after COMPLETED)
 router.post('/:id/pay', userAuth, async (req, res) => {

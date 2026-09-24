@@ -207,18 +207,24 @@ export const DashboardPage = ({
                         <span className={`badge ${statusClass}`}>{status}</span>
                       </td>
                       <td>
-                        <select
-                          className="status-select"
-                          value={status}
-                          onChange={(e) => onUpdateOrderStatus(order.id || order._id, e.target.value)}
+                        <a
+                          href="/admin/kot"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 8px',
+                            background: '#f1f5f9',
+                            color: '#0a3d31',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            textDecoration: 'none',
+                            border: '1px solid #cbd5e1'
+                          }}
                         >
-                          <option value="NEW">New</option>
-                          <option value="ACCEPTED">Accepted</option>
-                          <option value="PREPARING">Preparing</option>
-                          <option value="READY">Ready</option>
-                          <option value="COMPLETED">Completed</option>
-                          <option value="CANCELLED">Cancelled</option>
-                        </select>
+                          👨‍🍳 KOT Display
+                        </a>
                       </td>
                     </tr>
                   );

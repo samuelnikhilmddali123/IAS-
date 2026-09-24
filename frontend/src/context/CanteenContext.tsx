@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Platform, NativeModules } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { io, Socket } from 'socket.io-client';
 import { ScreenTab, CategoryId, MenuItem, CartItem, PaymentMethod, BackendOrder } from '../types';
@@ -129,6 +130,12 @@ export const fetchWithFallback = async (
   throw lastError || new Error('Cannot connect to backend server on any candidate URL');
 };
 
+export interface QuickLoginSession {
+  token: string;
+  profile: UserProfile;
+  expiresAt: number;
+}
+
 export interface UserProfile {
   name: string;
   mobile: string;
@@ -138,6 +145,7 @@ export interface UserProfile {
   officerId?: string;
   avatar?: string;
   email?: string;
+  location?: string;
 }
 
 export interface RegisterPayload {
@@ -147,6 +155,7 @@ export interface RegisterPayload {
   pin: string;
   avatar?: string;
   designation?: string;
+  location?: string;
   department?: string;
 }
 
@@ -158,6 +167,12 @@ export interface ActionSuccessInfo {
 }
 
 interface CanteenContextType {
+  quickLogin: (token: string, profile: any) => void;
+  quickLoginSession: QuickLoginSession | null;
+  quickLoginFromSaved: () => void;
+  logoutNotice: string | null;
+  setLogoutNotice: (msg: string | null) => void;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<{ success: boolean; error?: string }>;
   isAuthenticated: boolean;
   setIsAuthenticated: (val: boolean) => void;
   authToken: string;
@@ -211,6 +226,14 @@ interface CanteenContextType {
   fetchUnpaidOrders: () => Promise<BackendOrder[]>;
   lastPlacedOrder: BackendOrder | null;
   payOrder: (orderId: string) => Promise<{ success: boolean; error?: string; order?: BackendOrder }>;
+  payBatchOrders: (orderIds: string[]) => Promise<{ success: boolean; error?: string }>;
+  sendBatchPaymentQr: (orderIds: string[], totalAmount: number) => Promise<{
+    success: boolean;
+    error?: string;
+    registeredMobile?: string;
+    qrDataUrl?: string;
+    upiId?: string;
+  }>;
   sendPaymentQr: (orderId: string) => Promise<{
     success: boolean;
     error?: string;
@@ -223,7 +246,37 @@ interface CanteenContextType {
 const CanteenContext = createContext<CanteenContextType | undefined>(undefined);
 
 export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [quickLoginSession, setQuickLoginSession] = useState<QuickLoginSession | null>(() => {
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('canteen_quick_login');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && Date.now() < parsed.expiresAt) {
+            return parsed;
+          } else {
+            localStorage.removeItem('canteen_quick_login');
+          }
+        }
+      } catch {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (!quickLoginSession) return;
+    const interval = setInterval(() => {
+      if (Date.now() >= quickLoginSession.expiresAt) {
+        setQuickLoginSession(null);
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.removeItem('canteen_quick_login');
+        }
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [quickLoginSession]);
+
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authToken, setAuthToken] = useState<string>(() => {
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
       return localStorage.getItem('canteen_jwt_token') || '';
@@ -241,6 +294,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     email: '',
   });
 
+  const [logoutNotice, setLogoutNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ScreenTab>('home');
   const [activeCategory, setActiveCategory] = useState<CategoryId>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -484,6 +538,49 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
           avatar: u.avatar || '',
           email: u.email || '',
         });
+        const qlSession: QuickLoginSession = {
+          token: tok,
+          profile: {
+            name: u.name || '',
+            mobile: u.phone ? (u.phone.startsWith('+91') ? u.phone : `+91 ${u.phone}`) : candidatePhone,
+            designation: u.designation || 'Officer on Special Duty',
+            department: u.department || 'Cabinet Secretariat • Government of India',
+            id: String(u.id || u._id || u.officerId || ''),
+            officerId: u.officerId || '',
+            avatar: u.avatar || '',
+            email: u.email || '',
+          },
+          expiresAt: u.pinExpiresAt ? new Date(u.pinExpiresAt).getTime() : (Date.now() + 60 * 60 * 1000)
+        };
+        setQuickLoginSession(qlSession);
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.setItem('canteen_quick_login', JSON.stringify(qlSession));
+        }
+
+        // Also track in @recent_sessions for instant login screen presence
+        try {
+          const rawPhone = (u.phone || candidatePhone || '').replace(/\D/g, '').slice(-10);
+          const rSession = {
+            id: String(u.id || u._id || u.officerId || rawPhone),
+            name: u.name || '',
+            phone: rawPhone,
+            avatar: u.avatar || '',
+            designation: u.designation || 'IAS Officer',
+            token: tok,
+            logoutTime: Date.now()
+          };
+          AsyncStorage.getItem('@recent_sessions').then((res) => {
+            let sList = res ? JSON.parse(res) : [];
+            sList = sList.filter((s: any) => s.id !== rSession.id && s.phone !== rSession.phone);
+            sList.unshift(rSession);
+            sList = sList.slice(0, 5);
+            AsyncStorage.setItem('@recent_sessions', JSON.stringify(sList));
+            if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+              localStorage.setItem('@recent_sessions', JSON.stringify(sList));
+            }
+          }).catch(() => {});
+        } catch (e) {}
+
         setIsAuthenticated(true);
         setTimeout(() => {
           fetchOrderHistory();
@@ -517,7 +614,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      }, 7000);
+      }, 35000);
 
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success && data.user) {
@@ -539,13 +636,34 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setUserProfile({
           name: u.name || payload.name,
           mobile: u.phone ? (u.phone.startsWith('+91') ? u.phone : `+91 ${u.phone}`) : payload.phone,
-          designation: u.designation || payload.designation || 'Officer on Special Duty',
-          department: u.department || payload.department || 'Cabinet Secretariat • Government of India',
+          designation: (u.designation || payload.designation || 'Officer on Special Duty').trim(),
+          location: (u.location || payload.location || '').trim(),
+          department: (u.department || payload.department || 'Cabinet Secretariat • Government of India').trim(),
           id: String(u.id || u._id || u.officerId || ''),
           officerId: u.officerId || '',
           avatar: u.avatar || payload.avatar || '',
           email: u.email || payload.email || '',
         });
+        const qlSession: QuickLoginSession = {
+          token: tok,
+          profile: {
+            name: u.name || payload.name,
+            mobile: u.phone ? (u.phone.startsWith('+91') ? u.phone : `+91 ${u.phone}`) : payload.phone,
+            designation: (u.designation || payload.designation || 'Officer on Special Duty').trim(),
+          location: (u.location || payload.location || '').trim(),
+          department: (u.department || payload.department || 'Cabinet Secretariat • Government of India').trim(),
+            id: String(u.id || u._id || u.officerId || ''),
+            officerId: u.officerId || '',
+            avatar: u.avatar || payload.avatar || '',
+            email: u.email || payload.email || '',
+          },
+          expiresAt: Date.now() + 60 * 60 * 1000
+        };
+        setQuickLoginSession(qlSession);
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.setItem('canteen_quick_login', JSON.stringify(qlSession));
+        }
+
         setIsAuthenticated(true);
         setTimeout(() => {
           fetchOrderHistory();
@@ -593,6 +711,25 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
           avatar: data.user.avatar || '',
           email: data.user.email || '',
         });
+        const qlSession: QuickLoginSession = {
+          token: tok,
+          profile: {
+            name: data.user.name || '',
+            mobile: data.user.phone ? (data.user.phone.startsWith('+91') ? data.user.phone : `+91 ${data.user.phone}`) : '',
+            designation: data.user.designation || 'Officer on Special Duty',
+            department: data.user.department || 'Cabinet Secretariat • Government of India',
+            id: String(data.user.id || data.user._id || data.user.officerId || ''),
+            officerId: data.user.officerId || '',
+            avatar: data.user.avatar || '',
+            email: data.user.email || '',
+          },
+          expiresAt: Date.now() + 60 * 60 * 1000
+        };
+        setQuickLoginSession(qlSession);
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.setItem('canteen_quick_login', JSON.stringify(qlSession));
+        }
+
         setIsAuthenticated(true);
         setTimeout(() => {
           fetchOrderHistory();
@@ -605,8 +742,104 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+
+  const quickLogin = useCallback((token: string, profile: any) => {
+    const tok = token || 'quick-auth-' + Date.now();
+    moduleAuthToken = tok;
+    setAuthToken(tok);
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('canteen_jwt_token', tok);
+      } catch {}
+    }
+    const cleanPhone = (profile.mobile || profile.phone || '').replace(/\D/g, '').slice(-10);
+    const formattedMobile = cleanPhone ? (cleanPhone.startsWith('+91') ? cleanPhone : `+91 ${cleanPhone}`) : (profile.mobile || '');
+    
+    const normalized: UserProfile = {
+      name: profile.name || 'Officer',
+      mobile: formattedMobile,
+      designation: profile.designation || 'IAS Officer • Special Duty',
+      department: profile.department || 'Cabinet Secretariat • Government of India',
+      id: String(profile.id || cleanPhone || 'user'),
+      officerId: profile.officerId || profile.id || (`GOI-DL-2026-${cleanPhone ? cleanPhone.slice(-4) : '0001'}`),
+      avatar: profile.avatar || '',
+      email: profile.email || '',
+    };
+    setUserProfile(normalized);
+    setIsAuthenticated(true);
+
+    // Persist to quick login session
+    const qlSession: QuickLoginSession = {
+      token: tok,
+      profile: normalized,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    };
+    setQuickLoginSession(qlSession);
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('canteen_quick_login', JSON.stringify(qlSession));
+      } catch {}
+    }
+
+    // Refresh recent session timestamp
+    const sessionData = {
+      id: normalized.id,
+      name: normalized.name,
+      phone: cleanPhone,
+      avatar: normalized.avatar,
+      designation: normalized.designation,
+      token: tok,
+      logoutTime: Date.now(),
+    };
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('@recent_sessions');
+        let sessions = raw ? JSON.parse(raw) : [];
+        sessions = sessions.filter((s: any) => s.phone !== cleanPhone && s.id !== normalized.id);
+        sessions.unshift(sessionData);
+        localStorage.setItem('@recent_sessions', JSON.stringify(sessions.slice(0, 8)));
+      } catch {}
+    }
+
+    setTimeout(() => {
+      fetchOrderHistory();
+    }, 50);
+  }, [fetchOrderHistory]);
+
   // Logout Handler (Clears all state, tokens, storage, and resets authenticated status)
   const logout = useCallback(() => {
+    const profileToSave = { ...userProfile };
+    const tokenToSave = moduleAuthToken || authToken;
+
+    const storeRecentSession = async () => {
+      try {
+        if (profileToSave && (profileToSave.id || profileToSave.mobile || profileToSave.name)) {
+          const rawPhone = (profileToSave.mobile || '').replace(/\D/g, '').slice(-10);
+          const sessionData = {
+            id: String(profileToSave.id || rawPhone || 'user'),
+            name: profileToSave.name || 'Officer',
+            phone: rawPhone,
+            avatar: profileToSave.avatar || '',
+            designation: profileToSave.designation || 'IAS Officer',
+            token: tokenToSave || '',
+            logoutTime: Date.now()
+          };
+          const existing = await AsyncStorage.getItem('@recent_sessions');
+          let sessions = existing ? JSON.parse(existing) : [];
+          sessions = sessions.filter((s: any) => s.id !== sessionData.id && s.phone !== sessionData.phone);
+          sessions.unshift(sessionData);
+          sessions = sessions.slice(0, 5);
+          await AsyncStorage.setItem('@recent_sessions', JSON.stringify(sessions));
+          if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+            localStorage.setItem('@recent_sessions', JSON.stringify(sessions));
+          }
+        }
+      } catch (e) {
+        console.error('Failed to save recent session', e);
+      }
+    };
+    storeRecentSession();
+
     moduleAuthToken = '';
     setAuthToken('');
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
@@ -735,6 +968,7 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (res.ok && data.success && data.order) {
         setLastPlacedOrder(data.order);
         setOrderHistory((prev) => [data.order, ...prev]);
+        logout();
         return {
           success: true,
           message: data.message || 'Order sent to kitchen successfully.',
@@ -830,6 +1064,72 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return result.order || null;
   };
 
+  // Batch Pay Multiple Orders
+  const payBatchOrders = async (
+    orderIds: string[]
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetchWithFallback('/api/orders/pay-batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({ orderIds }),
+      }, 9000);
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setOrderHistory((prev) =>
+          prev.map((o) => {
+            const match = orderIds.includes(String(o.id)) || orderIds.includes(String(o._id)) || orderIds.includes(String(o.orderNumber));
+            return match ? { ...o, paymentStatus: 'PAID' } : o;
+          })
+        );
+        return { success: true };
+      }
+      return { success: false, error: data.message || 'Batch payment failed.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error processing batch payment.' };
+    }
+  };
+
+  // Batch Send Combined Restaurant QR & Bill to Mobile
+  const sendBatchPaymentQr = async (
+    orderIds: string[],
+    totalAmount: number
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    registeredMobile?: string;
+    qrDataUrl?: string;
+    upiId?: string;
+  }> => {
+    try {
+      const res = await fetchWithFallback('/api/orders/send-batch-payment-qr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({ orderIds, totalAmount }),
+      }, 9000);
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        return {
+          success: true,
+          registeredMobile: data.registeredMobile,
+          qrDataUrl: data.qrDataUrl,
+          upiId: data.upiId,
+        };
+      }
+      return { success: false, error: data.message || 'Failed to dispatch combined QR to mobile.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error dispatching combined QR.' };
+    }
+  };
+
   // Customer Pay Order (Requirement 9 & 10: payment after COMPLETED)
   const payOrder = async (
     orderId: string
@@ -894,6 +1194,95 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  
+  const updateProfile = async (updates: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetchWithFallback('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(updates),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.user) {
+        setUserProfile(prev => ({
+          ...prev,
+          name: data.user.name || prev.name,
+          designation: data.user.designation || prev.designation,
+          location: data.user.location || prev.location,
+          avatar: data.user.avatar || prev.avatar,
+        }));
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        error: data.message || 'Failed to update profile.',
+      };
+    } catch (err: any) {
+      console.error('[AUTH] Profile update error:', err?.message || err);
+      return {
+        success: false,
+        error: 'Unable to connect to backend server.',
+      };
+    }
+  };
+
+  const quickLoginFromSaved = useCallback(async () => {
+    if (quickLoginSession && Date.now() < quickLoginSession.expiresAt) {
+      const tok = quickLoginSession.token;
+      
+      try {
+        const res = await fetchWithFallback('/api/auth/me', {
+          headers: { Authorization: `Bearer ${tok}` }
+        });
+        const data = await res.json();
+        
+        if (data.success && data.user) {
+          moduleAuthToken = tok;
+          setAuthToken(tok);
+          if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+            localStorage.setItem('canteen_jwt_token', tok);
+          }
+          setUserProfile({
+            name: data.user.name || '',
+            mobile: data.user.phone ? (data.user.phone.startsWith('+91') ? data.user.phone : `+91 ${data.user.phone}`) : '',
+            designation: data.user.designation || 'Officer on Special Duty',
+            department: data.user.department || 'Cabinet Secretariat • Government of India',
+            id: String(data.user.id || data.user._id || data.user.officerId || ''),
+            officerId: data.user.officerId || '',
+            avatar: data.user.avatar || '',
+            email: data.user.email || '',
+          });
+          setIsAuthenticated(true);
+          setTimeout(() => {
+            fetchOrderHistory();
+          }, 30);
+        } else {
+          setQuickLoginSession(null);
+          if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+            localStorage.removeItem('canteen_quick_login');
+          }
+        }
+      } catch (err) {
+        setQuickLoginSession(null);
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.removeItem('canteen_quick_login');
+        }
+      }
+    } else {
+      setQuickLoginSession(null);
+      if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+        localStorage.removeItem('canteen_quick_login');
+      }
+    }
+  }, [quickLoginSession, fetchOrderHistory]);
+
+
+
   return (
     <CanteenContext.Provider
       value={{
@@ -904,6 +1293,12 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         login,
         registerUser,
         qrLogin,
+        updateProfile,
+        quickLoginSession,
+        quickLoginFromSaved,
+        quickLogin,
+        logoutNotice,
+        setLogoutNotice,
         lastDispatchedQr,
         logout,
         activeTab,
@@ -951,6 +1346,8 @@ export const CanteenProvider: React.FC<{ children: React.ReactNode }> = ({ child
         fetchUnpaidOrders,
         lastPlacedOrder,
         sendPaymentQr,
+        payBatchOrders,
+        sendBatchPaymentQr,
       }}
     >
       {children}

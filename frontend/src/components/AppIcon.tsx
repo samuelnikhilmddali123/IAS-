@@ -53,7 +53,11 @@ export type IconName =
   | 'refresh'
   | 'cart'
   | 'qr-code'
-  | 'checkmark-done-circle';
+  | 'checkmark-done-circle'
+  | 'briefcase-outline'
+  | 'location-outline'
+  | 'create-outline'
+  | 'camera-outline';
 
 interface AppIconProps {
   name: IconName | string;
@@ -409,6 +413,36 @@ export const AppIcon: React.FC<AppIconProps> = ({
         return (
           <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
             <Path d="M4 7V4h3M17 4h3v3M4 17v3h3M20 17v3h-3M7 12h10" />
+          </G>
+        );
+
+      case 'briefcase-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Rect x="4" y="7" width="16" height="13" rx="2" ry="2" />
+            <Path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+          </G>
+        );
+      case 'location-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M12 21c4-4 8-9 8-13a8 8 0 1 0-16 0c0 4 4 9 8 13z" />
+            <Circle cx="12" cy="8" r="2.5" />
+          </G>
+        );
+      case 'create-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </G>
+        );
+
+
+      case 'camera-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <Circle cx="12" cy="13" r="4" />
           </G>
         );
       default:

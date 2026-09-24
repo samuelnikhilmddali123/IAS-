@@ -48,6 +48,11 @@ const userSchema = new mongoose.Schema(
             default: "IAS Officer • Special Duty"
         },
 
+        location: {
+            type: String,
+            default: ""
+        },
+
         department: {
             type: String,
             default: "Cabinet Secretariat • Government of India"
@@ -61,6 +66,16 @@ const userSchema = new mongoose.Schema(
         role: {
             type: String,
             default: "user"
+        },
+
+        pinLoggedInAt: {
+            type: Date,
+            default: null
+        },
+
+        pinExpiresAt: {
+            type: Date,
+            default: null
         },
 
         // Lifetime Login QR Access Fields
