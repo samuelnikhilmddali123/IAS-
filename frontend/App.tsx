@@ -9,7 +9,6 @@ import { CanteenProvider, useCanteen } from './src/context/CanteenContext';
 import { Sidebar } from './src/components/Sidebar';
 import { Header } from './src/components/Header';
 import { HomeScreen } from './src/screens/HomeScreen';
-import { MenuScreen } from './src/screens/MenuScreen';
 import { OrdersScreen } from './src/screens/OrdersScreen';
 import { OrderTrackingScreen } from './src/screens/OrderTrackingScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -21,9 +20,8 @@ function MainLandscapeApp(): React.JSX.Element {
   const renderActiveScreen = () => {
     switch (activeTab) {
       case 'home':
-        return <HomeScreen />;
       case 'menu':
-        return <MenuScreen />;
+        return <HomeScreen />;
       case 'cart':
         return <OrdersScreen />;
       case 'orders':

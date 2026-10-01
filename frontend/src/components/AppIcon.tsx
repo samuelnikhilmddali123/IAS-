@@ -445,6 +445,70 @@ export const AppIcon: React.FC<AppIconProps> = ({
             <Circle cx="12" cy="13" r="4" />
           </G>
         );
+      case 'calendar':
+      case 'calendar-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <Path d="M16 2v4M8 2v4M3 10h18" />
+          </G>
+        );
+      case 'heart':
+      case 'heart-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </G>
+        );
+      case 'ribbon':
+      case 'ribbon-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Circle cx="12" cy="8" r="6" />
+            <Path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11" />
+          </G>
+        );
+      case 'people':
+      case 'people-outline':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <Circle cx="9" cy="7" r="4" />
+            <Path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <Path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </G>
+        );
+      case 'add':
+        return (
+          <G stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M12 5v14M5 12h14" />
+          </G>
+        );
+      case 'close':
+        return (
+          <G stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M18 6L6 18M6 6l12 12" />
+          </G>
+        );
+      case 'close-circle':
+        return (
+          <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Circle cx="12" cy="12" r="10" />
+            <Path d="M15 9l-6 6M9 9l6 6" />
+          </G>
+        );
+      case 'chevron-back':
+        return (
+          <G stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M15 18l-6-6 6-6" />
+          </G>
+        );
+      case 'checkmark':
+        return (
+          <G stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M20 6L9 17l-5-5" />
+          </G>
+        );
       default:
         return (
           <G stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none">

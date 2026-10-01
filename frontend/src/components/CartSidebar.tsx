@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { AppIcon } from './AppIcon';
-import { useCanteen } from '../context/CanteenContext';
+import { useCanteen, resolveImageUrl } from '../context/CanteenContext';
 
 export const CartSidebar: React.FC = () => {
   const {
@@ -23,6 +23,7 @@ export const CartSidebar: React.FC = () => {
     setOrderNote,
     setActiveTab,
     checkoutCart,
+    getItemPrice,
   } = useCanteen();
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -31,9 +32,13 @@ export const CartSidebar: React.FC = () => {
     if (cart.length === 0 || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await checkoutCart();
+      const result = await checkoutCart();
+      if (result.success) {
+        clearCart();
+        setActiveTab('orders');
+      }
     } catch (e) {
-      console.error(e);
+      console.error('[CartSidebar] Checkout error:', e);
     } finally {
       setIsSubmitting(false);
     }
@@ -76,7 +81,7 @@ export const CartSidebar: React.FC = () => {
           cart.map((cartItem) => (
             <View key={cartItem.item.id} style={styles.itemRow}>
               <Image
-                source={{ uri: cartItem.item.image }}
+                source={{ uri: resolveImageUrl(cartItem.item.image) }}
                 style={styles.itemImage}
                 resizeMode="cover"
               />
@@ -85,7 +90,7 @@ export const CartSidebar: React.FC = () => {
                 <Text style={styles.itemName} numberOfLines={1}>
                   {cartItem.item.name}
                 </Text>
-                <Text style={styles.itemPrice}>₹{cartItem.item.price * cartItem.quantity}</Text>
+                <Text style={styles.itemPrice}>₹{getItemPrice(cartItem.item) * cartItem.quantity}</Text>
               </View>
 
               {/* Stepper */}

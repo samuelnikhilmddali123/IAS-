@@ -84,6 +84,7 @@ let currentPairingQr = null; // DataURL representation of pairing QR
 let connectionStatus = 'DISCONNECTED'; // 'DISCONNECTED' | 'PAIRING' | 'CONNECTED'
 let connectedNumber = null;
 let isInitializing = false;
+let reconnectTimer = null;
 
 function formatWhatsAppJid(phone) {
   let digits = String(phone || '').replace(/\D/g, '');
@@ -142,21 +143,24 @@ async function initWhatsAppWebClient() {
         cfg.connectionStatus = `Connected (+${connectedNumber})`;
         cfg.adminWhatsAppNumber = `+${connectedNumber}`;
         writeConfig(cfg);
+
+        // Auto flush any queued messages after socket handshake stabilizes (6s)
+        setTimeout(flushPendingOutbox, 6000);
       } else if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        connectionStatus = 'DISCONNECTED';
-        console.log(`[WhatsApp Web] Connection closed (statusCode: ${statusCode}, shouldReconnect: ${shouldReconnect})`);
+        const isSessionInvalid = statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403;
+        connectionStatus = isSessionInvalid ? 'PAIRING' : 'DISCONNECTED';
+        console.log(`[WhatsApp Web] Connection closed (statusCode: ${statusCode}, isSessionInvalid: ${isSessionInvalid})`);
         waSocket = null;
-        if (shouldReconnect) {
-          setTimeout(initWhatsAppWebClient, 3500);
-        } else {
+        if (isSessionInvalid) {
           currentPairingQr = null;
           connectedNumber = null;
-          try {
-            fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-          } catch {}
-          setTimeout(initWhatsAppWebClient, 1500);
+          clearAuthDir();
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(initWhatsAppWebClient, 3000);
+        } else {
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(initWhatsAppWebClient, 5000);
         }
       }
     });
@@ -167,6 +171,24 @@ async function initWhatsAppWebClient() {
   } finally {
     isInitializing = false;
   }
+}
+
+function clearAuthDir() {
+  try {
+    if (fs.existsSync(AUTH_DIR)) {
+      const files = fs.readdirSync(AUTH_DIR);
+      for (const f of files) {
+        try {
+          fs.rmSync(path.join(AUTH_DIR, f), { recursive: true, force: true });
+        } catch (e) {}
+      }
+    }
+  } catch (err) {}
+  try {
+    if (!fs.existsSync(AUTH_DIR)) {
+      fs.mkdirSync(AUTH_DIR, { recursive: true });
+    }
+  } catch (err) {}
 }
 
 async function disconnectWhatsAppWebClient() {
@@ -180,9 +202,7 @@ async function disconnectWhatsAppWebClient() {
   currentPairingQr = null;
   connectedNumber = null;
   connectionStatus = 'DISCONNECTED';
-  try {
-    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-  } catch {}
+  clearAuthDir();
   console.log('[WhatsApp Web] Device unlinked by Admin.');
   setTimeout(initWhatsAppWebClient, 1000);
   return { success: true, message: 'Admin WhatsApp unlinked. Fresh QR generated.' };
@@ -208,25 +228,14 @@ async function sendQrMessage({ to, userName, qrImage, qrDataUrl, qrPayload, expi
   const cleanTo = (to || '').trim();
   const recipientJid = formatWhatsAppJid(cleanTo);
 
-  const messageText = [
-    `*Canteen Services Login QR*`,
-    ``,
-    `Dear Officer *${userName || 'IAS Officer'}*,`,
-    ``,
-    `Your Canteen Services account has been registered successfully.`,
-    ``,
-    `Please use the attached Login QR Code with the Canteen Services App to securely authenticate.`,
-    ``,
-    `Do not share this QR code with anyone.`,
-    ``,
-    `— Canteen Services Admin Desk`
-  ].join('\n');
+  const officerName = (userName || 'Member').trim();
+  const messageText = `Dear ${officerName}, your Canteen Services account is registered successfully. Use the attached Login QR Code to securely access the app. Please do not share it.`;
 
   const dispatchRecord = {
     id: `msg_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
     from: fromNumber,
     to: cleanTo,
-    userName: userName || 'IAS Officer',
+    userName: officerName,
     qrId,
     qrImage,
     qrDataUrl,
@@ -243,12 +252,19 @@ async function sendQrMessage({ to, userName, qrImage, qrDataUrl, qrPayload, expi
     try {
       let imageBuffer = null;
       
-      // Attempt to load the beautiful generated card from disk
+      // Attempt to load generated QR card from disk or base64
       if (qrImage) {
-        // qrImage is e.g. "/uploads/qr/qr_123.png", so we resolve it from backend root
-        const fullPath = path.join(__dirname, '../..', qrImage);
-        if (fs.existsSync(fullPath)) {
-          imageBuffer = fs.readFileSync(fullPath);
+        if (typeof qrImage === 'string' && qrImage.startsWith('data:image')) {
+          const base64Data = qrImage.replace(/^data:image\/\w+;base64,/, '');
+          imageBuffer = Buffer.from(base64Data, 'base64');
+        } else if (typeof qrImage === 'string') {
+          let fullPath = qrImage;
+          if (qrImage.startsWith('/uploads') || qrImage.startsWith('uploads')) {
+            fullPath = path.join(__dirname, '../..', qrImage);
+          }
+          if (fs.existsSync(fullPath)) {
+            imageBuffer = fs.readFileSync(fullPath);
+          }
         }
       }
       
@@ -388,7 +404,7 @@ function getOutbox(limit = 50) {
 // Start WhatsApp Web Client automatically on module load
 initWhatsAppWebClient();
 
-function sendBillMessage({ to, billText, qrDataUrl }) {
+async function sendBillMessage({ to, billText, qrDataUrl, billData }) {
   const cfg = readConfig();
   const fromNumber = cfg.adminWhatsAppNumber || '+91 91212 66269';
   const cleanTo = (to || '').trim();
@@ -406,6 +422,7 @@ function sendBillMessage({ to, billText, qrDataUrl }) {
   }
 
   const recipientJid = formatWhatsAppJid(cleanTo);
+  const billImageService = require('./billImageService');
 
   const dispatchRecord = {
     id: `msg_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
@@ -422,14 +439,30 @@ function sendBillMessage({ to, billText, qrDataUrl }) {
   if (waSocket && connectionStatus === 'CONNECTED') {
     try {
       let imageBuffer = null;
-      if (qrDataUrl) {
+
+      // 1. Generate full official Government of India Tax Invoice / Paid Settlement bill card image
+      if (billData) {
+        try {
+          imageBuffer = await billImageService.generateBillImage({
+            ...billData,
+            qrDataUrl: qrDataUrl || billData.qrDataUrl,
+            userPhone: cleanTo
+          });
+        } catch (imgErr) {
+          console.error('[WhatsApp Web] Error generating visual bill card:', imgErr);
+        }
+      }
+
+      // 2. Fallback to raw QR code if bill image generation fails
+      if (!imageBuffer && qrDataUrl) {
         const base64Data = qrDataUrl.replace(/^data:image\/\w+;base64,/, '');
         imageBuffer = Buffer.from(base64Data, 'base64');
       }
+
       if (imageBuffer) {
-        waSocket.sendMessage(recipientJid, { image: imageBuffer, caption: billText, mimetype: 'image/png' });
+        await waSocket.sendMessage(recipientJid, { image: imageBuffer, caption: billText, mimetype: 'image/png' });
       } else {
-        waSocket.sendMessage(recipientJid, { text: billText });
+        await waSocket.sendMessage(recipientJid, { text: billText });
       }
       dispatchRecord.status = 'DELIVERED';
       dispatchRecord.providerStatus = 'SENT_VIA_WHATSAPP_WEB_LIVE';
@@ -485,13 +518,19 @@ async function sendPaidInvoicePdf({ to, userName, billData, pdfBuffer }) {
   const totalAmount = billData.totalAmount || 0;
   const officerName = userName || billData.userName || 'IAS Officer';
 
-  const caption = `🏛️ *GOVERNMENT OF INDIA • CANTEEN SERVICES*\n\n` +
-    `*OFFICIAL FOOD INVOICE (PAID)*\n` +
-    `Dear *${officerName}*,\n` +
-    `Your dining bill payment of *₹${totalAmount}* has been verified and settled.\n\n` +
-    `📄 *Invoice No:* ${invoiceNo}\n` +
-    `📅 *Date:* ${billData.date || new Date().toLocaleDateString('en-IN')}, ${billData.time || new Date().toLocaleTimeString('en-IN')}\n` +
-    `💳 *Status:* PAID (Online UPI)\n\n` +
+  const now = new Date();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fallbackDate = `${now.getDate().toString().padStart(2, '0')} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  const fallbackTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const dateStr = billData.date ? (billData.time ? `${billData.date}, ${billData.time}` : billData.date) : `${fallbackDate}, ${fallbackTime}`;
+
+  const caption = `🏛️ GOVERNMENT OF INDIA • CANTEEN SERVICES\n\n` +
+    `OFFICIAL FOOD INVOICE (PAID)\n` +
+    `Dear ${officerName},\n` +
+    `Your dining bill payment of ₹${totalAmount} has been verified and settled.\n\n` +
+    `📄 Invoice No: ${invoiceNo}\n` +
+    `📅 Date: ${dateStr}\n` +
+    `💳 Status: PAID (Online UPI)\n\n` +
     `Your official Tax Invoice PDF is attached above.\n` +
     `Thank you for dining with Canteen Services!`;
 
@@ -546,6 +585,71 @@ async function sendPaidInvoicePdf({ to, userName, billData, pdfBuffer }) {
   };
 }
 
+async function flushPendingOutbox() {
+  if (!waSocket || connectionStatus !== 'CONNECTED') return;
+
+  const outbox = readOutbox();
+  let updated = false;
+
+  for (const item of outbox) {
+    if (!waSocket || connectionStatus !== 'CONNECTED') break;
+
+    if (item.status === 'PENDING_PAIRING' || item.status === 'QUEUED') {
+      try {
+        const recipientJid = formatWhatsAppJid(item.to);
+        let imageBuffer = null;
+
+        if (item.qrImage) {
+          if (typeof item.qrImage === 'string' && item.qrImage.startsWith('data:image')) {
+            const base64Data = item.qrImage.replace(/^data:image\/\w+;base64,/, '');
+            imageBuffer = Buffer.from(base64Data, 'base64');
+          } else if (typeof item.qrImage === 'string') {
+            let fullPath = item.qrImage;
+            if (item.qrImage.startsWith('/uploads') || item.qrImage.startsWith('uploads')) {
+              fullPath = path.join(__dirname, '../..', item.qrImage);
+            }
+            if (fs.existsSync(fullPath)) {
+              imageBuffer = fs.readFileSync(fullPath);
+            }
+          }
+        }
+
+        if (!imageBuffer && item.qrDataUrl) {
+          const base64Data = item.qrDataUrl.replace(/^data:image\/\w+;base64,/, '');
+          imageBuffer = Buffer.from(base64Data, 'base64');
+        }
+
+        if (imageBuffer) {
+          await waSocket.sendMessage(recipientJid, {
+            image: imageBuffer,
+            caption: item.messageText || item.caption || 'Your Lifetime Login QR Card',
+            mimetype: 'image/png'
+          });
+        } else if (item.messageText) {
+          await waSocket.sendMessage(recipientJid, {
+            text: item.messageText
+          });
+        }
+
+        item.status = 'DELIVERED';
+        item.providerStatus = 'SENT_VIA_WHATSAPP_WEB_LIVE_FLUSH';
+        item.deliveredAt = new Date().toISOString();
+        updated = true;
+        console.log(`[WhatsApp Web] Flushed and delivered pending QR to ${item.to}`);
+
+        // Rate limit between message deliveries
+        await new Promise(r => setTimeout(r, 2000));
+      } catch (err) {
+        console.error(`[WhatsApp Web] Error flushing message for ${item.to}:`, err.message);
+      }
+    }
+  }
+
+  if (updated) {
+    writeOutbox(outbox);
+  }
+}
+
 async function sendMessage(to, text) {
   return sendBillMessage({ to, billText: text });
 }
@@ -562,5 +666,6 @@ module.exports = {
   initWhatsAppWebClient,
   disconnectWhatsAppWebClient,
   getWhatsAppWebStatus,
+  flushPendingOutbox
 };
 

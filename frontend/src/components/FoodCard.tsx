@@ -1,26 +1,78 @@
 import React from 'react';
-import { StyleSheet, View, Text, Image, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, Image, TouchableOpacity, Platform } from 'react-native';
 import { AppIcon } from './AppIcon';
 import { MenuItem } from '../types';
-import { useCanteen } from '../context/CanteenContext';
+import { useCanteen, resolveImageUrl } from '../context/CanteenContext';
 
 interface FoodCardProps {
   item: MenuItem;
+  index?: number;
 }
 
-export const FoodCard: React.FC<FoodCardProps> = ({ item }) => {
-  const { getItemQuantity, updateQuantity, addToCart } = useCanteen();
+export const FoodCard: React.FC<FoodCardProps> = React.memo(({ item, index = 0 }) => {
+  const { getItemQuantity, updateQuantity, addToCart, getItemPrice } = useCanteen();
   const quantity = getItemQuantity(item.id);
+  const displayPrice = getItemPrice(item);
+
+  const [imgUri, setImgUri] = React.useState<string>(() => resolveImageUrl(item.image));
+  const [isLoaded, setIsLoaded] = React.useState<boolean>(false);
+  const [hasImageError, setHasImageError] = React.useState<boolean>(false);
+
+  const isAboveTheFold = index < 8;
+
+  React.useEffect(() => {
+    const resolved = resolveImageUrl(item.image);
+    setImgUri(resolved);
+    setIsLoaded(false);
+    setHasImageError(false);
+  }, [item.image]);
+
+  const subtitle = item.portion || (item as any).description || (item.category ? `${item.category.charAt(0).toUpperCase() + item.category.slice(1)} special` : 'Freshly prepared');
 
   return (
     <View style={styles.card}>
-      {/* Food Thumbnail */}
+      {/* Food Thumbnail & Zero-CLS Wrapper */}
       <View style={styles.imageWrapper}>
-        <Image
-          source={{ uri: item.image }}
-          style={styles.image}
-          resizeMode="cover"
-        />
+        {/* Placeholder / Skeleton Icon visible while image is loading or if failed */}
+        {(!isLoaded || hasImageError || !imgUri) && (
+          <View style={[StyleSheet.absoluteFill, styles.fallbackContainer]}>
+            <AppIcon name="restaurant-outline" size={26} color="#94a3b8" />
+          </View>
+        )}
+
+        {imgUri && !hasImageError && (
+          Platform.OS === 'web' ? (
+            // Native HTML5 Optimized Image for Web with eager/lazy and high priority
+            <img
+              src={imgUri}
+              alt={item.name}
+              loading={isAboveTheFold ? 'eager' : 'lazy'}
+              decoding="async"
+              // @ts-ignore
+              fetchpriority={isAboveTheFold ? 'high' : 'low'}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                opacity: isLoaded ? 1 : 0,
+                transition: 'opacity 0.22s ease-in-out',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+              }}
+              onLoad={() => setIsLoaded(true)}
+              onError={() => setHasImageError(true)}
+            />
+          ) : (
+            <Image
+              source={{ uri: imgUri }}
+              style={[styles.image, { opacity: isLoaded ? 1 : 0 }]}
+              resizeMode="cover"
+              onLoad={() => setIsLoaded(true)}
+              onError={() => setHasImageError(true)}
+            />
+          )
+        )}
       </View>
 
       {/* Item Info */}
@@ -29,68 +81,50 @@ export const FoodCard: React.FC<FoodCardProps> = ({ item }) => {
           {item.name}
         </Text>
 
-        <View style={styles.priceRow}>
-          <Text style={styles.price}>₹{item.price}</Text>
-        </View>
+        <Text style={styles.subtitle} numberOfLines={1}>
+          {subtitle}
+        </Text>
 
-        {/* Veg / Non-Veg Indicator */}
-        <View style={styles.vegIndicatorRow}>
-          <View
-            style={[
-              styles.dietBox,
-              item.isVeg ? styles.vegBox : styles.nonVegBox,
-            ]}
-          >
-            <View
-              style={[
-                styles.dietDot,
-                item.isVeg ? styles.vegDot : styles.nonVegDot,
-              ]}
-            />
+        {/* Bottom Actions: Single Applicable Price on Left, Stepper or Add Button on Right */}
+        <View style={styles.bottomRow}>
+          <View style={styles.priceContainer}>
+            <Text style={styles.price}>₹{displayPrice}</Text>
           </View>
-          <Text style={styles.dietText}>{item.isVeg ? 'Veg' : 'Non-Veg'}</Text>
-        </View>
 
-        {/* Bottom Actions: Stepper and Add Button */}
-        <View style={styles.actionRow}>
-          <View style={styles.stepper}>
+          {quantity === 0 ? (
             <TouchableOpacity
-              style={styles.stepBtn}
-              onPress={() => updateQuantity(item.id, -1)}
-              disabled={quantity === 0}
-              activeOpacity={0.6}
-            >
-              <Text style={[styles.stepBtnText, quantity === 0 && styles.stepBtnDisabled]}>
-                −
-              </Text>
-            </TouchableOpacity>
-
-            <Text style={styles.qtyText}>{quantity}</Text>
-
-            <TouchableOpacity
-              style={styles.stepBtn}
+              style={styles.addPillBtn}
               onPress={() => addToCart(item)}
-              activeOpacity={0.6}
+              activeOpacity={0.8}
             >
-              <Text style={styles.stepBtnText}>+</Text>
+              <Text style={styles.addPillText}>Add +</Text>
             </TouchableOpacity>
-          </View>
+          ) : (
+            <View style={styles.stepperPill}>
+              <TouchableOpacity
+                style={styles.stepperActionBtn}
+                onPress={() => updateQuantity(item.id, -1)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.stepperActionText}>−</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.addBtn, quantity > 0 && styles.addBtnActive]}
-            onPress={() => addToCart(item)}
-            activeOpacity={0.8}
-          >
-            <AppIcon name="cart-outline" size={13} color="#ffffff" style={{ marginRight: 4 }} />
-            <Text style={styles.addBtnText}>
-              {quantity > 0 ? `Add (${quantity})` : 'Add'}
-            </Text>
-          </TouchableOpacity>
+              <Text style={styles.stepperQtyText}>{quantity}</Text>
+
+              <TouchableOpacity
+                style={styles.stepperActionBtn}
+                onPress={() => addToCart(item)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.stepperActionText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -100,7 +134,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 2,
@@ -108,121 +142,121 @@ const styles = StyleSheet.create({
   },
   imageWrapper: {
     width: '100%',
-    height: 110,
+    height: 114,
     backgroundColor: '#f1f5f9',
+    position: 'relative',
   },
   image: {
     width: '100%',
     height: '100%',
   },
+  fallbackContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f5f9',
+  },
   content: {
-    padding: 10,
+    paddingHorizontal: 11,
+    paddingTop: 8,
+    paddingBottom: 10,
   },
   name: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#0f172a',
     marginBottom: 2,
   },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 4,
-  },
-  price: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  vegIndicatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    gap: 5,
-  },
-  dietBox: {
-    width: 12,
-    height: 12,
-    borderRadius: 2,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  vegBox: {
-    borderColor: '#16a34a',
-  },
-  nonVegBox: {
-    borderColor: '#dc2626',
-  },
-  dietDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  vegDot: {
-    backgroundColor: '#16a34a',
-  },
-  nonVegDot: {
-    backgroundColor: '#dc2626',
-  },
-  dietText: {
-    fontSize: 10,
+  subtitle: {
+    fontSize: 11,
     color: '#64748b',
-    fontWeight: '500',
+    marginBottom: 8,
   },
-  actionRow: {
+  bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
   },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 6,
-    paddingHorizontal: 4,
-    height: 28,
-  },
-  stepBtn: {
-    width: 20,
-    height: 20,
-    alignItems: 'center',
+  priceContainer: {
     justifyContent: 'center',
   },
-  stepBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#334155',
-    lineHeight: 16,
-  },
-  stepBtnDisabled: {
-    color: '#cbd5e1',
-  },
-  qtyText: {
-    fontSize: 12,
-    fontWeight: '700',
+  price: {
+    fontSize: 14.5,
+    fontWeight: '800',
     color: '#0f172a',
-    paddingHorizontal: 6,
   },
-  addBtn: {
-    flex: 1,
+  officialPriceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0d3829',
+    gap: 4,
+  },
+  officialPriceText: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#0a3d31',
+  },
+  officialBadge: {
+    backgroundColor: '#dbeafe',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
     borderRadius: 6,
-    height: 28,
-    paddingHorizontal: 8,
+    borderWidth: 0.5,
+    borderColor: '#93c5fd',
   },
-  addBtnActive: {
-    backgroundColor: '#15803d',
+  officialBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#1d4ed8',
   },
-  addBtnText: {
-    color: '#ffffff',
-    fontSize: 11,
+  generalPriceStrikethrough: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  strikethroughText: {
+    textDecorationLine: 'line-through',
+    color: '#64748b',
     fontWeight: '600',
+  },
+  addPillBtn: {
+    backgroundColor: '#ecfdf5',
+    paddingHorizontal: 15,
+    paddingVertical: 5,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addPillText: {
+    color: '#059669',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  stepperPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a3d31',
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    gap: 4,
+  },
+  stepperActionBtn: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperActionText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
+  },
+  stepperQtyText: {
+    color: '#ffffff',
+    fontSize: 11.5,
+    fontWeight: '700',
+    minWidth: 12,
+    textAlign: 'center',
   },
 });

@@ -1,4 +1,6 @@
 const express = require('express');
+const router = express.Router();
+const jwt = require('jsonwebtoken');
 const {
   registerAdmin,
   loginAdmin,
@@ -11,22 +13,72 @@ const {
   deleteUser,
   revokeUserQr,
   regenerateUserQr,
-  updateUserProfile
+  updateUserProfile,
+  sendOfficerQrEmail
 } = require('../services/authService');
 const userAuth = require('../middleware/userAuthMiddleware');
 
-const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'canteen_super_secret_jwt_key_2026_secure';
 
-// Admin Auth
+/**
+ * @swagger
+ * /api/auth/admin/register:
+ *   post:
+ *     summary: Register a new admin account
+ *     tags: [Admin Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Admin registered successfully
+ *       400:
+ *         description: Invalid payload or email duplicate
+ */
 router.post('/admin/register', async (req, res) => {
   try {
     const admin = await registerAdmin(req.body);
-    res.status(201).json({ success: true, message: 'Admin registered successfully', admin });
+    res.status(201).json({ success: true, message: 'Admin account created successfully', admin });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/admin/login:
+ *   post:
+ *     summary: Authenticate admin via credentials
+ *     tags: [Admin Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Admin login successful
+ *       500:
+ *         description: Server error
+ */
 router.post('/admin/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -43,7 +95,7 @@ const handleUserRegister = async (req, res) => {
     const result = await registerUser(req.body);
     res.status(201).json({
       success: true,
-      message: 'Account created successfully. One-time QR login code dispatched via Admin WhatsApp.',
+      message: 'Account created successfully.',
       ...result
     });
   } catch (error) {
@@ -90,7 +142,7 @@ const handleQrLogin = async (req, res) => {
       ...result
     });
   } catch (error) {
-    res.status(error.statusCode || 400).json({
+    res.status(error.statusCode || 401).json({
       success: false,
       message: error.message
     });
@@ -108,7 +160,6 @@ router.post('/qr-login', handleQrLogin);
 router.post('/user/qr-login', handleQrLogin);
 
 // 1-Tap Quick Login by User ID or Phone
-// 1-Tap Quick Login by User ID or Phone (Honors 1-hour PIN timer without restarting it)
 router.post('/quick-login', async (req, res) => {
   try {
     const { userId, phone } = req.body;
@@ -130,7 +181,6 @@ router.post('/quick-login', async (req, res) => {
     const now = Date.now();
     const pinExpTime = user.pinExpiresAt ? new Date(user.pinExpiresAt).getTime() : 0;
 
-    // Check if 1-hour active window has expired
     if (!pinExpTime || now >= pinExpTime) {
       return res.status(401).json({
         success: false,
@@ -139,11 +189,9 @@ router.post('/quick-login', async (req, res) => {
       });
     }
 
-    // IMPORTANT: DO NOT restart or extend the 1-hour timer when logging in without PIN!
-    const jwt = require('jsonwebtoken');
     const token = jwt.sign(
-      { id: user.id, name: user.name, phone: user.phone, role: 'user' },
-      process.env.JWT_SECRET || 'canteen_super_secret_jwt_key_2026_secure',
+      { id: user.id || user._id, name: user.name, phone: user.phone, role: 'user' },
+      JWT_SECRET,
       { expiresIn: '30d' }
     );
 
@@ -151,16 +199,25 @@ router.post('/quick-login', async (req, res) => {
       success: true,
       token,
       user: {
-        id: user.id,
+        id: user.id || user._id,
         name: user.name,
-        email: user.email,
+        email: user.email || '',
         phone: user.phone,
         mobile: user.phone,
         avatar: user.avatar,
-        designation: user.designation,
+        designation: user.designation || '',
         location: user.location || '',
-        department: user.department,
-        officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4)),
+        department: user.department || '',
+        officerId: user.officerId || ('GOI-DL-2026-' + String(user.id || user._id).slice(-4)),
+        dob: user.dob || '',
+        marriageDate: user.marriageDate || '',
+        importantDates: user.importantDates || '',
+        childrenCount: user.childrenCount || '',
+        childrenDetails: user.childrenDetails || '',
+        siblings: user.siblings || '',
+        dietaryPreferences: user.dietaryPreferences || '',
+        emergencyContact: user.emergencyContact || '',
+        isOfficial: Boolean(user.isOfficial),
         pinExpiresAt: user.pinExpiresAt
       }
     });
@@ -181,13 +238,23 @@ const handleMe = async (req, res) => {
       user: {
         id: user.id,
         name: user.name,
-        email: user.email,
+        email: user.email || '',
         phone: user.phone,
         mobile: user.phone,
         avatar: user.avatar,
-        designation: user.designation,
-        department: user.department,
-        officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4))
+        designation: user.designation || '',
+        location: user.location || '',
+        department: user.department || '',
+        officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4)),
+        dob: user.dob || '',
+        marriageDate: user.marriageDate || '',
+        importantDates: user.importantDates || '',
+        childrenCount: user.childrenCount || '',
+        childrenDetails: user.childrenDetails || '',
+        siblings: user.siblings || '',
+        dietaryPreferences: user.dietaryPreferences || '',
+        emergencyContact: user.emergencyContact || '',
+        isOfficial: Boolean(user.isOfficial)
       }
     });
   } catch (error) {
@@ -215,25 +282,46 @@ router.get('/users', async (req, res) => {
   }
 });
 
-// Update Officer Phone Number / Profile (Admin Dashboard)
+// Update Officer Phone Number / Profile / Official Status (Admin Dashboard)
 router.put('/users/:id', async (req, res) => {
   try {
-    const { phone, name, email, designation, department } = req.body;
+    const { phone, name, email, designation, department, location, isOfficial } = req.body;
     const user = await getUserById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'Officer not found' });
     }
     const updates = {};
-    if (phone) updates.phone = phone;
-    if (name) updates.name = name;
-    if (email) updates.email = email;
-    if (designation) updates.designation = designation;
-    if (department) updates.department = department;
+    if (phone !== undefined) updates.phone = phone;
+    if (name !== undefined) updates.name = name;
+    if (email !== undefined) updates.email = email;
+    if (designation !== undefined) updates.designation = designation;
+    if (department !== undefined) updates.department = department;
+    if (location !== undefined) updates.location = location;
+    if (isOfficial !== undefined) updates.isOfficial = Boolean(isOfficial);
 
     const updated = await updateUser(user.id, updates);
     res.status(200).json({
       success: true,
       message: 'Officer profile updated successfully',
+      user: updated
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Toggle Official Status (Admin Endpoint)
+router.put('/users/:id/toggle-official', async (req, res) => {
+  try {
+    const user = await getUserById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Officer not found' });
+    }
+    const newStatus = req.body.isOfficial !== undefined ? Boolean(req.body.isOfficial) : !user.isOfficial;
+    const updated = await updateUser(user.id, { isOfficial: newStatus });
+    res.status(200).json({
+      success: true,
+      message: `User status changed to ${newStatus ? 'Official / Verified' : 'General'}`,
       user: updated
     });
   } catch (error) {
@@ -306,17 +394,27 @@ router.get('/my-qr', userAuth, async (req, res) => {
   }
 });
 
-
 // Edit Profile Route
 router.put('/profile', userAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const updates = {
-      name: req.body.name,
-      designation: req.body.designation,
-      location: req.body.location,
-      avatar: req.body.avatar
-    };
+    const updates = {};
+    if (req.body.name !== undefined) updates.name = req.body.name;
+    if (req.body.email !== undefined) updates.email = req.body.email;
+    if (req.body.designation !== undefined) updates.designation = req.body.designation;
+    if (req.body.location !== undefined) updates.location = req.body.location;
+    if (req.body.department !== undefined) updates.department = req.body.department;
+    if (req.body.avatar !== undefined) updates.avatar = req.body.avatar;
+    if (req.body.dob !== undefined) updates.dob = req.body.dob;
+    if (req.body.marriageDate !== undefined) updates.marriageDate = req.body.marriageDate;
+    if (req.body.importantDates !== undefined) updates.importantDates = req.body.importantDates;
+    if (req.body.childrenCount !== undefined) updates.childrenCount = req.body.childrenCount;
+    if (req.body.childrenDetails !== undefined) updates.childrenDetails = req.body.childrenDetails;
+    if (req.body.siblings !== undefined) updates.siblings = req.body.siblings;
+    if (req.body.dietaryPreferences !== undefined) updates.dietaryPreferences = req.body.dietaryPreferences;
+    if (req.body.emergencyContact !== undefined) updates.emergencyContact = req.body.emergencyContact;
+    if (req.body.bloodGroup !== undefined) updates.bloodGroup = req.body.bloodGroup;
+    if (req.body.homeAddress !== undefined) updates.homeAddress = req.body.homeAddress;
     
     const updatedUser = await updateUserProfile(userId, updates);
     
@@ -334,5 +432,42 @@ router.put('/profile', userAuth, async (req, res) => {
   }
 });
 
-module.exports = router;
+/**
+ * @swagger
+ * /api/auth/send-qr-email:
+ *   post:
+ *     summary: Send official lifetime QR code card to officer email address
+ *     tags: [Officer Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *                 description: Officer phone, ID, or user ID
+ *               email:
+ *                 type: string
+ *                 description: Target email address (optional if registered)
+ */
+router.post('/send-qr-email', async (req, res) => {
+  try {
+    const { identifier, phone, officerId, email } = req.body;
+    const target = identifier || phone || officerId || email;
+    if (!target) {
+      return res.status(400).json({ success: false, message: 'Officer identifier or email is required' });
+    }
+    const result = await sendOfficerQrEmail(target, email);
+    res.json({
+      success: true,
+      message: `Official QR Card dispatched to ${result.email}`,
+      ...result
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+});
 
+module.exports = router;

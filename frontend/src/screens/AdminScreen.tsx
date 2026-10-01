@@ -14,6 +14,8 @@ import {
 import { AppIcon } from '../components/AppIcon';
 import { useCanteen, getApiBase } from '../context/CanteenContext';
 
+const EMBLEM_IMAGE = require('../../assets/6a72e4e7-5e3f-43cb-bd57-bac2a1fcb7f4.png');
+
 interface AdminStats {
   totalOrders: number;
   totalRevenue: number;
@@ -691,12 +693,17 @@ export const AdminScreen: React.FC = () => {
                   officersList.map((off, idx) => (
                     <View key={off.id || off._id || idx} style={styles.officerCard}>
                       <Image
-                        source={{
-                          uri:
-                            off.avatar ||
-                            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-                        }}
+                        source={
+                          off.avatar && !off.avatar.includes('photo-1507003211169')
+                            ? { uri: off.avatar }
+                            : EMBLEM_IMAGE
+                        }
                         style={styles.officerCardAvatar}
+                        resizeMode={
+                          off.avatar && !off.avatar.includes('photo-1507003211169')
+                            ? 'cover'
+                            : 'contain'
+                        }
                       />
                       <View style={styles.officerCardInfo}>
                         <Text style={styles.officerCardName}>{off.name}</Text>

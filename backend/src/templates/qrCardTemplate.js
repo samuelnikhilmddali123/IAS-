@@ -19,11 +19,14 @@ try {
 
 module.exports = function generateQrCardHtml(officer) {
   const name = (officer.name || officer.userName || 'Officer').trim();
-  const designation = (officer.designation || 'Special Duty Officer').trim();
-  const location = (officer.location || officer.department || '').trim();
+  const designation = (officer.designation || '').trim();
+  const location = (officer.location || officer.department || officer.roomNumber || '').trim();
   const qrDataUrl = officer.qrDataUrl || '';
-  const photoUrl = officer.photoUrl || '';
-  const roleBadge = officer.category || officer.roleBadge || 'IAS OFFICER';
+  const photoUrl = (officer.photoUrl || officer.avatar || '').trim();
+  const roleBadge = officer.category || officer.roleBadge || officer.serviceCadre || 'CANTEEN MEMBER';
+
+  const hasValidPhoto = photoUrl && !photoUrl.includes('unsplash.com') && (photoUrl.startsWith('http') || photoUrl.startsWith('data:image'));
+  const initial = name ? name.charAt(0).toUpperCase() : 'O';
 
   return `
 <!DOCTYPE html>
@@ -81,42 +84,39 @@ module.exports = function generateQrCardHtml(officer) {
       object-fit: cover;
     }
     
-    /* Name & Details (Clean Layout matching provided image) */
+    /* Name & Details */
     .profile-info {
       position: absolute;
-      top: 282px;
+      top: 275px;
       left: 355px;
       width: 575px;
+      height: 238px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
       z-index: 10;
     }
-    .profile-badge {
-      font-size: 19px;
-      font-weight: 700;
-      color: #64748b;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-bottom: 6px;
-    }
     .profile-name {
-      font-size: 42px;
+      font-size: 46px;
       font-weight: 800;
       color: #0f172a;
-      margin: 0 0 8px 0;
-      line-height: 1.18;
+      margin: 0;
+      line-height: 1.2;
       word-break: break-word;
     }
     .profile-designation {
-      font-size: 26px;
+      font-size: 24px;
       font-weight: 600;
       color: #334155;
-      margin: 0 0 6px 0;
+      margin-top: 8px;
       line-height: 1.25;
     }
     .profile-location {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 500;
       color: #64748b;
-      margin: 0;
+      margin-top: 4px;
       line-height: 1.25;
     }
     
@@ -146,13 +146,12 @@ module.exports = function generateQrCardHtml(officer) {
   ${bgBase64 ? '<div class="background"></div>' : ''}
   
   <div class="profile-photo">
-    ${photoUrl ? `<img src="${photoUrl}">` : name.charAt(0).toUpperCase()}
+    ${hasValidPhoto ? `<img src="${photoUrl}">` : initial}
   </div>
   
   <div class="profile-info">
-    <div class="profile-badge">${roleBadge}</div>
     <h2 class="profile-name">${name}</h2>
-    <div class="profile-designation">${designation}</div>
+    ${designation ? `<div class="profile-designation">${designation}</div>` : ''}
     ${location ? `<div class="profile-location">${location}</div>` : ''}
   </div>
   

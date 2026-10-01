@@ -33,21 +33,14 @@ export const mapBackendStatusToUI = (raw) => {
   if (kStatus === 'READY' || status === 'READY') {
     return 'ready';
   }
-  if (kStatus === 'PREPARING') {
+  if (kStatus === 'PREPARING' || status === 'PREPARING' || kStatus === 'ACCEPTED') {
     return 'prep';
   }
-  if (kStatus === 'ACCEPTED') {
-    return 'prep';
-  }
-  if (kStatus === 'NEW') {
-    return 'prep';
+  if (kStatus === 'NEW' || status === 'NEW' || status === 'PENDING' || status === 'PRE_ORDERED') {
+    return 'new';
   }
 
-  // Fallback to main status field
-  if (status === 'PREPARING') return 'prep';
-  if (status === 'READY') return 'ready';
-  if (status === 'COMPLETED') return 'completed';
-
+  // Fallback
   return 'prep';
 };
 

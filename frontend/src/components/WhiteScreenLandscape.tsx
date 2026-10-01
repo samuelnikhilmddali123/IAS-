@@ -7,24 +7,24 @@ export interface WhiteScreenLandscapeProps {
   isLocked?: boolean;
 }
 
-// Support both web static folder (/taj.png) and native bundle asset
-const TAJ_IMAGE_SOURCE = Platform.select({
-  web: { uri: '/taj.png' },
-  default: require('../../assets/taj.png'),
+// Support both web static folder (/budda.jpeg) and native bundle asset
+const BUDDHA_IMAGE_SOURCE = Platform.select({
+  web: { uri: '/budha home.png' },
+  default: require('../../assets/budha home.png'),
 });
 
 /**
- * Pure white screen component in fixed landscape mode with Taj logo positioned in the top right.
+ * Pure white screen component in fixed landscape mode with Buddha banner positioned in the top right.
  */
 export const WhiteScreenLandscape: React.FC<WhiteScreenLandscapeProps> = () => {
   return (
     <View style={styles.container}>
       <View style={styles.topRightContainer}>
         <Image
-          source={TAJ_IMAGE_SOURCE}
+          source={BUDDHA_IMAGE_SOURCE}
           style={styles.tajImage}
-          resizeMode="contain"
-          accessibilityLabel="Taj Logo"
+          resizeMode="cover"
+          accessibilityLabel="Buddha Banner"
         />
       </View>
     </View>

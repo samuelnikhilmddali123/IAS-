@@ -6,6 +6,7 @@ let socketInstance = null;
 export const getSocket = () => {
   if (!socketInstance) {
     socketInstance = io(BASE_URL, {
+      path: '/api/socket.io',
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,

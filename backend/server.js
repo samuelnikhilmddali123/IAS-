@@ -50,8 +50,27 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 const kotPath = path.join(__dirname, 'public/admin/kot');
 app.use('/admin/kot', express.static(kotPath));
 
+// High-performance static caching options for images (30-day browser cache + immutable)
+const imageStaticOptions = {
+  maxAge: '30d',
+  immutable: true,
+  etag: true,
+  lastModified: true,
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+  }
+};
+
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), imageStaticOptions));
+app.use('/ias-images', express.static(path.join(__dirname, 'public/ias images'), imageStaticOptions));
+app.use('/ias%20images', express.static(path.join(__dirname, 'public/ias images'), imageStaticOptions));
+app.use('/ias-thumbnails', express.static(path.join(__dirname, 'public/ias-thumbnails'), imageStaticOptions));
+app.use('/api/ias-images', express.static(path.join(__dirname, 'public/ias images'), imageStaticOptions));
+app.use('/public/ias images', express.static(path.join(__dirname, 'public/ias images'), imageStaticOptions));
+app.use('/public/ias-images', express.static(path.join(__dirname, 'public/ias images'), imageStaticOptions));
+app.use('/public/ias-thumbnails', express.static(path.join(__dirname, 'public/ias-thumbnails'), imageStaticOptions));
+app.use('/public', express.static(path.join(__dirname, 'public'), imageStaticOptions));
 
 // Robust multi-source image search (SerpApi + Live Web Search + Wikimedia + Curated Directory)
 const { searchOfficerImages } = require('./src/services/officerImageService');
@@ -79,8 +98,102 @@ const handleOfficerSearch = async (req, res) => {
   }
 };
 
+// In-memory cache for fast repeated image delivery on mobile/web
+const imageCache = new Map();
+
+const handleImageProxy = async (req, res) => {
+  const targetUrl = req.query?.url;
+  if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+    return res.status(400).send('Invalid URL');
+  }
+
+  // Check in-memory cache
+  if (imageCache.has(targetUrl)) {
+    const cached = imageCache.get(targetUrl);
+    res.setHeader('Content-Type', cached.contentType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(cached.buffer);
+  }
+
+  try {
+    const parsed = new URL(targetUrl);
+    const lib = parsed.protocol === 'https:' ? https : http;
+    const reqHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 CanteenApp/1.0',
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Referer': 'https://en.wikipedia.org/',
+    };
+
+    const clientReq = lib.get(targetUrl, { headers: reqHeaders, timeout: 5000 }, (remoteRes) => {
+      if (remoteRes.statusCode >= 300 && remoteRes.statusCode < 400 && remoteRes.headers.location) {
+        let redirectUrl = remoteRes.headers.location;
+        if (!redirectUrl.startsWith('http')) {
+          redirectUrl = new URL(redirectUrl, targetUrl).toString();
+        }
+        return res.redirect(`/api/image-proxy?url=${encodeURIComponent(redirectUrl)}`);
+      }
+
+      if (remoteRes.statusCode !== 200) {
+        return res.status(remoteRes.statusCode).send('Failed to fetch upstream image');
+      }
+
+      const contentType = remoteRes.headers['content-type'] || 'image/jpeg';
+      const chunks = [];
+      remoteRes.on('data', chunk => chunks.push(chunk));
+      remoteRes.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        if (imageCache.size > 150) {
+          const firstKey = imageCache.keys().next().value;
+          imageCache.delete(firstKey);
+        }
+        imageCache.set(targetUrl, { buffer, contentType });
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.send(buffer);
+      });
+    });
+
+    clientReq.on('timeout', () => {
+      clientReq.destroy();
+      res.status(504).send('Image fetch timed out');
+    });
+
+    clientReq.on('error', (err) => {
+      res.status(502).send(`Proxy error: ${err.message}`);
+    });
+  } catch (err) {
+    res.status(500).send('Server error');
+  }
+};
+
 app.get('/search-officer', handleOfficerSearch);
 app.post('/search-officer', handleOfficerSearch);
+app.get('/api/search-officer', handleOfficerSearch);
+app.post('/api/search-officer', handleOfficerSearch);
+app.get('/api/officer/search', handleOfficerSearch);
+app.post('/api/officer/search', handleOfficerSearch);
+
+// Image proxy for mobile app Expo compatibility
+app.get('/image-proxy', handleImageProxy);
+app.get('/api/image-proxy', handleImageProxy);
+
+const { swaggerSpec, swaggerUi } = require('./src/config/swagger');
+
+// Swagger UI Documentation & raw JSON spec
+app.get('/api-docs/json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'Government Canteen API Documentation',
+  customCss: '.swagger-ui .topbar { display: none }',
+  swaggerOptions: {
+    docExpansion: 'list',
+    filter: true,
+    persistAuthorization: true,
+  },
+}));
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -89,6 +202,11 @@ app.use('/api/foods', foodRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+
+// KOT Kitchen SPA direct entry and wildcard routing
+app.get(/^\/admin\/kot(\/.*)?$/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/admin/kot/index.html'));
+});
 
 // Admin React SPA direct entry and wildcard routing for all dedicated pages
 // (/admin/dashboard, /admin/food-menu, /admin/orders, /admin/whatsapp, /admin/officers)
@@ -131,13 +249,7 @@ app.use((err, req, res, next) => {
 });
 
 async function startServer() {
-  // Connect to MongoDB and synchronize existing data
-  const isConnected = await connectDB();
-  if (isConnected) {
-    await migrateData();
-  }
-
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`=======================================================`);
     console.log(`  CANTEEN SERVICES BACKEND ACTIVE ON PORT ${PORT}      `);
     console.log(`  Database Status: ${mongoose.connection.readyState === 1 ? 'MongoDB Connected (Active)' : 'Local JSON Store (Fallback)'}`);
@@ -148,9 +260,16 @@ async function startServer() {
     console.log(`  Officer Search:  http://localhost:${PORT}/search-officer`);
     console.log(`=======================================================`);
   });
+
+  // Connect to MongoDB and synchronize data in background
+  connectDB().then((isConnected) => {
+    if (isConnected) {
+      migrateData().catch((err) => console.warn('[Migrate] Background error:', err.message));
+    }
+  }).catch((err) => console.warn('[Database] Background connection error:', err.message));
   // Initialize Socket.io for Kitchen Order Ticket (KOT) delivery
   const { Server: SocketIOServer } = require('socket.io');
-  io = new SocketIOServer(server, { cors: { origin: '*' } });
+  io = new SocketIOServer(server, { path: '/api/socket.io', cors: { origin: '*' } });
   io.on('connection', (socket) => {
     console.log('[Socket.IO] Client connected to live order feed:', socket.id);
   });

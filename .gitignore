@@ -20,3 +20,14 @@ backend/data/baileys_auth_info/
 
 # Temporary diff file
 diff.txt
+
+# Scratch and test files
+scratch/
+*.exe
+__pycache__/
+backend/__pycache__/
+backend/temp_*.png
+backend/test_*.png
+backend/test_*.pdf
+backend/test_*.html
+test_opt.webp

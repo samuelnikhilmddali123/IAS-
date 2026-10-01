@@ -10,6 +10,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>%WEB_TITLE%</title>
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
@@ -37,6 +39,14 @@
         width: 100%;
         flex: 1;
         background-color: #ffffff;
+      }
+      .sticky-cart-container,
+      [data-sticky-cart="true"] {
+        position: -webkit-sticky !important;
+        position: sticky !important;
+        top: 12px !important;
+        align-self: flex-start !important;
+        z-index: 50 !important;
       }
     </style>
   </head>

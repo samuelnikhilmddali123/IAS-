@@ -55,6 +55,12 @@ const foodSchema = new mongoose.Schema(
             min: 0
         },
 
+        officialPrice: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
         rating: {
             type: Number,
             default: 4.8

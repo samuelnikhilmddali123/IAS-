@@ -1,160 +1,72 @@
 [
   {
-    "id": "ord-1790245004837",
-    "orderNumber": "ORD-2026-83428",
-    "userId": "6ab4d44cb8b24f4735205595",
-    "userName": "Varun",
-    "userPhone": "9917595999",
+    "id": "ord-1790834257683",
+    "orderNumber": "ORD-2026-32100",
+    "userId": "guest",
+    "userName": "IAS Test Officer",
+    "userPhone": "9999900003",
     "userAvatar": "",
     "items": [
       {
-        "foodId": "6ab24677ee4bc3af55fe7101",
-        "id": "6ab24677ee4bc3af55fe7101",
-        "name": "Dal Khichdi & Papad",
+        "foodId": "6aba596b4544e546ae193ccb",
+        "id": "6aba596b4544e546ae193ccb",
+        "name": "Tender Mutton Curry",
         "quantity": 1,
-        "price": 55,
-        "total": 55,
-        "image": "https://images.unsplash.com/photo-1546833998-877b37c2e5c6?auto=format&fit=crop&w=500&q=80"
+        "price": 400,
+        "total": 400,
+        "image": ""
       }
     ],
-    "subtotal": 55,
-    "totalAmount": 55,
-    "paymentMethod": "restaurant_qr",
+    "subtotal": 400,
+    "totalAmount": 400,
+    "paymentMethod": "online",
     "paymentStatus": "UNPAID",
+    "orderType": "INSTANT",
+    "isPreOrder": false,
+    "pickupDate": null,
+    "pickupTime": null,
+    "slotId": null,
+    "preOrderSlot": null,
     "orderNote": "",
     "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 27,
-    "createdAt": "2026-09-24T10:16:44.837Z"
+    "status": "NEW",
+    "kitchenStatus": "NEW",
+    "tokenNumber": 11,
+    "createdAt": "2026-10-01T05:57:37.683Z"
   },
   {
-    "id": "ord-1790244921410",
-    "orderNumber": "ORD-2026-17859",
-    "userId": "6ab4d44cb8b24f4735205595",
-    "userName": "Varun",
-    "userPhone": "9917595999",
+    "id": "ord-1790833979738",
+    "orderNumber": "ORD-2026-77599",
+    "userId": "guest",
+    "userName": "IAS Varun",
+    "userPhone": "9999900002",
     "userAvatar": "",
     "items": [
       {
-        "foodId": "6ab24677ee4bc3af55fe7100",
-        "id": "6ab24677ee4bc3af55fe7100",
-        "name": "Phulka & Paneer Butter Masala",
+        "foodId": "6aba596b4544e546ae193c5b",
+        "id": "6aba596b4544e546ae193c5b",
+        "name": "Veg Fried Rice",
         "quantity": 1,
-        "price": 85,
-        "total": 85,
-        "image": "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=500&q=80"
+        "price": 180,
+        "total": 180,
+        "image": ""
       }
     ],
-    "subtotal": 85,
-    "totalAmount": 85,
-    "paymentMethod": "restaurant_qr",
+    "subtotal": 180,
+    "totalAmount": 180,
+    "paymentMethod": "online",
     "paymentStatus": "UNPAID",
+    "orderType": "INSTANT",
+    "isPreOrder": false,
+    "pickupDate": null,
+    "pickupTime": null,
+    "slotId": null,
+    "preOrderSlot": null,
     "orderNote": "",
     "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 20,
-    "createdAt": "2026-09-24T10:15:21.410Z"
-  },
-  {
-    "id": "ord-1790242267013",
-    "orderNumber": "ORD-2026-38628",
-    "userId": "6ab4d44cb8b24f4735205595",
-    "userName": "Varun",
-    "userPhone": "9917595999",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6ab24677ee4bc3af55fe7100",
-        "id": "6ab24677ee4bc3af55fe7100",
-        "name": "Phulka & Paneer Butter Masala",
-        "quantity": 2,
-        "price": 85,
-        "total": 170,
-        "image": "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=500&q=80"
-      },
-      {
-        "foodId": "6ab24676ee4bc3af55fe70fb",
-        "id": "6ab24676ee4bc3af55fe70fb",
-        "name": "Curd Rice",
-        "quantity": 1,
-        "price": 40,
-        "total": 40,
-        "image": "https://images.unsplash.com/photo-1546833998-877b37c2e5c6?auto=format&fit=crop&w=500&q=80"
-      },
-      {
-        "foodId": "6ab24676ee4bc3af55fe70f8",
-        "id": "6ab24676ee4bc3af55fe70f8",
-        "name": "South Indian Thali",
-        "quantity": 1,
-        "price": 80,
-        "total": 80,
-        "image": "https://images.unsplash.com/photo-1610057099443-fde8c4d50f91?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 290,
-    "totalAmount": 290,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 65,
-    "createdAt": "2026-09-24T09:31:07.013Z"
-  },
-  {
-    "id": "ord-1790242140969",
-    "orderNumber": "ORD-2026-71752",
-    "userId": "6ab4d44cb8b24f4735205595",
-    "userName": "Varun",
-    "userPhone": "9917595999",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6ab24677ee4bc3af55fe7100",
-        "id": "6ab24677ee4bc3af55fe7100",
-        "name": "Phulka & Paneer Butter Masala",
-        "quantity": 1,
-        "price": 85,
-        "total": 85,
-        "image": "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 85,
-    "totalAmount": 85,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 49,
-    "createdAt": "2026-09-24T09:29:00.969Z"
-  },
-  {
-    "id": "ord-1790241540368",
-    "orderNumber": "ORD-2026-30846",
-    "userId": "6ab4d44cb8b24f4735205595",
-    "userName": "Varun",
-    "userPhone": "9917595999",
-    "userAvatar": "",
-    "items": [
-      {
-        "foodId": "6ab24677ee4bc3af55fe70ff",
-        "id": "6ab24677ee4bc3af55fe70ff",
-        "name": "Masala Chai",
-        "quantity": 1,
-        "price": 15,
-        "total": 15,
-        "image": "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=500&q=80"
-      }
-    ],
-    "subtotal": 15,
-    "totalAmount": 15,
-    "paymentMethod": "restaurant_qr",
-    "paymentStatus": "UNPAID",
-    "orderNote": "",
-    "mealSlot": "General",
-    "status": "PREPARING",
-    "tokenNumber": 16,
-    "createdAt": "2026-09-24T09:19:00.368Z"
+    "status": "NEW",
+    "kitchenStatus": "NEW",
+    "tokenNumber": 52,
+    "createdAt": "2026-10-01T05:52:59.738Z"
   }
 ]

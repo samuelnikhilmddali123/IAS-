@@ -7,6 +7,7 @@ export const AddFoodModal = ({ isOpen, onClose, onAddFood }) => {
   const [category, setCategory] = useState('Meals');
   const [subCategory, setSubCategory] = useState('North Indian');
   const [price, setPrice] = useState('');
+  const [officialPrice, setOfficialPrice] = useState('');
   const [preparationTime, setPreparationTime] = useState('15 mins');
   const [mealSlot, setMealSlot] = useState('lunch');
   const [isVeg, setIsVeg] = useState(true);
@@ -45,13 +46,18 @@ export const AddFoodModal = ({ isOpen, onClose, onAddFood }) => {
       return;
     }
 
+    const gp = parseFloat(price);
+    const op = officialPrice ? parseFloat(officialPrice) : Math.max(1, Math.round(gp * 0.85));
+
     setSubmitting(true);
     try {
       await onAddFood({
         name: name.trim(),
         category,
         subCategory,
-        price: parseFloat(price),
+        price: gp,
+        generalPrice: gp,
+        officialPrice: op,
         preparationTime,
         mealSlot,
         isVeg,
@@ -129,15 +135,46 @@ export const AddFoodModal = ({ isOpen, onClose, onAddFood }) => {
               </select>
             </div>
             <div className="form-group">
-              <label>Price (₹) *</label>
+              <label>Meal Slot *</label>
+              <select className="form-control" value={mealSlot} onChange={(e) => setMealSlot(e.target.value)}>
+                <option value="breakfast">Breakfast</option>
+                <option value="lunch">Lunch</option>
+                <option value="dinner">Dinner</option>
+                <option value="all-day">All Day</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>General Price (₹) *</label>
               <input
                 type="number"
                 min="1"
                 step="1"
                 className="form-control"
-                placeholder="60"
+                placeholder="100"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={(e) => {
+                  setPrice(e.target.value);
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val) && val > 0 && !officialPrice) {
+                    setOfficialPrice(String(Math.max(1, Math.round(val * 0.85))));
+                  }
+                }}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label style={{ color: '#1d4ed8' }}>Official Price (₹) (IAS ✓) *</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                className="form-control"
+                placeholder="85"
+                value={officialPrice}
+                onChange={(e) => setOfficialPrice(e.target.value)}
                 required
               />
             </div>

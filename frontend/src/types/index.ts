@@ -2,14 +2,27 @@ export type ScreenTab = 'home' | 'menu' | 'cart' | 'orders' | 'profile' | 'setti
 
 export type CategoryId =
   | 'all'
-  | 'breakfast'
-  | 'lunch'
-  | 'dinner'
-  | 'snacks'
+  | 'soups'
+  | 'salads'
+  | 'veg-starters'
+  | 'paneer-starters'
+  | 'egg-starters'
+  | 'chicken-starters'
+  | 'fish-prawns-starters'
+  | 'chicken-curries'
+  | 'mutton-curries'
+  | 'fish-prawns-curries'
+  | 'veg-curries'
+  | 'rice-veg'
+  | 'rice-non-veg'
+  | 'noodles'
+  | 'chicken-biryani'
+  | 'mutton-biryani'
+  | 'fish-prawns-biryani'
+  | 'tandoori-kebabs'
+  | 'indian-breads'
   | 'beverages'
-  | 'healthy'
-  | 'south-indian'
-  | 'north-indian';
+  | 'desserts';
 
 export interface Category {
   id: CategoryId;
@@ -19,14 +32,68 @@ export interface Category {
 
 export interface MenuItem {
   id: string;
+  code?: string | null;
   name: string;
   price: number;
+  generalPrice?: number;
+  officialPrice?: number;
   isVeg: boolean;
   category: CategoryId;
-  subCategory?: string;
+  subCategory?: string | null;
   image: string;
-  rating?: number;
-  portion?: string;
+  rating?: number | null;
+  portion?: string | null;
+  description?: string | null;
+  availableQuantity?: number | null;
+  active?: boolean | null;
+  isAvailable?: boolean | null;
+  tags?: string[] | null;
+  [key: string]: any;
+}
+
+export interface UserProfile {
+  name: string;
+  mobile: string;
+  designation?: string;
+  department?: string;
+  id: string;
+  officerId?: string;
+  avatar?: string;
+  email?: string;
+  location?: string;
+  isOfficial?: boolean;
+  dob?: string;
+  marriageDate?: string;
+  importantDates?: string;
+  childrenCount?: string;
+  childrenDetails?: string;
+  siblings?: string;
+  dietaryPreferences?: string;
+  emergencyContact?: string;
+  bloodGroup?: string;
+  homeAddress?: string;
+}
+
+export interface RegisterPayload {
+  name: string;
+  email?: string;
+  phone: string;
+  pin: string;
+  avatar?: string;
+  designation?: string;
+  location?: string;
+  department?: string;
+  isOfficial?: boolean;
+  dob?: string;
+  marriageDate?: string;
+  importantDates?: string;
+  childrenCount?: string;
+  childrenDetails?: string;
+  siblings?: string;
+  dietaryPreferences?: string;
+  emergencyContact?: string;
+  bloodGroup?: string;
+  homeAddress?: string;
 }
 
 export interface CartItem {
@@ -65,6 +132,9 @@ export interface BackendOrder {
   orderNote?: string;
   mealSlot?: string;
   orderType?: 'INSTANT' | 'PRE_ORDER';
+  isPreOrder?: boolean;
+  slotId?: string;
+  preOrderSlot?: string;
   pickupDate?: string;
   pickupTime?: string;
   kitchenStatus?: 'NEW' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
@@ -72,5 +142,6 @@ export interface BackendOrder {
   status: 'NEW' | 'ACCEPTED' | 'PENDING' | 'PRE_ORDERED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
   tokenNumber?: number;
   createdAt: string;
+  updatedAt?: string;
 }
 

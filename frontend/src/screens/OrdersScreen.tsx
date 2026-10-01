@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { AppIcon } from '../components/AppIcon';
-import { useCanteen, ActionSuccessInfo } from '../context/CanteenContext';
+import { useCanteen, ActionSuccessInfo, resolveImageUrl } from '../context/CanteenContext';
 
 const PRE_ORDER_TIMES = ['1:00 PM', '2:30 PM', '6:00 PM', '7:30 PM', '8:30 PM'];
 
@@ -36,6 +36,7 @@ export const OrdersScreen: React.FC = () => {
     setActiveTab,
     checkoutCart,
     generateBillCart,
+    getItemPrice,
     actionSuccessModal,
     setActionSuccessModal,
     logout,
@@ -44,7 +45,7 @@ export const OrdersScreen: React.FC = () => {
   // ==========================================
   // ACTION 1: CHECKOUT HANDLER
   // ==========================================
-  const handleCheckoutClick = () => {
+  const handleCheckoutClick = async () => {
     if (cart.length === 0) {
       setErrorMessage('Your cart is empty. Please add items from the menu.');
       return;
@@ -54,15 +55,20 @@ export const OrdersScreen: React.FC = () => {
     setIsSubmitting(true);
     setActiveActionType('checkout');
 
-    // Fire and forget checkout to ensure immediate logout
-    checkoutCart().catch(err => console.error(err));
-
-    // Immediately clear cart and log out
-    clearCart();
-    logout();
-    
-    setIsSubmitting(false);
-    setActiveActionType(null);
+    try {
+      const result = await checkoutCart();
+      if (result.success) {
+        clearCart();
+        setActiveTab('orders');
+      } else {
+        setErrorMessage(result.error || 'Server rejected order checkout.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Error processing checkout.');
+    } finally {
+      setIsSubmitting(false);
+      setActiveActionType(null);
+    }
   };
 
   // ==========================================
@@ -157,7 +163,7 @@ export const OrdersScreen: React.FC = () => {
                   <Text style={styles.emptyCartSub}>Add wholesome officer meals from today's menu.</Text>
                   <TouchableOpacity
                     style={styles.browseMenuBtn}
-                    onPress={() => setActiveTab('menu')}
+                    onPress={() => setActiveTab('home')}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.browseMenuBtnText}>Browse Food Menu ➔</Text>
@@ -166,7 +172,7 @@ export const OrdersScreen: React.FC = () => {
               ) : (
                 cart.map((c) => (
                   <View key={c.item.id} style={styles.cartItemRow}>
-                    <Image source={{ uri: c.item.image }} style={styles.itemThumb} />
+                    <Image source={{ uri: resolveImageUrl(c.item.image) }} style={styles.itemThumb} />
 
                     <View style={styles.itemInfo}>
                       <Text style={styles.itemName} numberOfLines={1}>
@@ -180,7 +186,7 @@ export const OrdersScreen: React.FC = () => {
                           ]}
                         />
                         <Text style={styles.itemCategoryText}>
-                          {c.item.subCategory || c.item.category} • ₹{c.item.price} each
+                          {c.item.subCategory || c.item.category} • ₹{getItemPrice(c.item)} each
                         </Text>
                       </View>
                     </View>
@@ -208,7 +214,7 @@ export const OrdersScreen: React.FC = () => {
 
                     {/* Item Total */}
                     <View style={styles.itemTotalBox}>
-                      <Text style={styles.itemTotalPrice}>₹{c.item.price * c.quantity}</Text>
+                      <Text style={styles.itemTotalPrice}>₹{getItemPrice(c.item) * c.quantity}</Text>
                     </View>
 
                     {/* Remove Trash */}

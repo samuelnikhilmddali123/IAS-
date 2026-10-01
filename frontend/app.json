@@ -4,22 +4,23 @@
     "slug": "Restaurant",
     "version": "1.0.0",
     "orientation": "landscape",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#ffffff",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.ias.restaurant",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "foregroundImage": "./assets/logo.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/logo.png"
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/logo.png",
       "backgroundColor": "#ffffff"
     }
   }

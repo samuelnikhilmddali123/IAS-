@@ -345,12 +345,18 @@ const dataStore = {
 
   saveFood(foodData) {
     const foods = readJSON(FOODS_FILE);
+    const priceNum = Number(foodData.price) || 0;
+    const officialPriceNum = foodData.officialPrice !== undefined && foodData.officialPrice !== null
+      ? Number(foodData.officialPrice)
+      : (priceNum > 0 ? Math.max(1, Math.round(priceNum * 0.85)) : 0);
+
     const newFood = {
       id: foodData.id || ('food-' + Date.now()),
       name: foodData.name,
       description: foodData.description || '',
       portion: foodData.portion || 'Standard Serving',
-      price: Number(foodData.price) || 0,
+      price: priceNum,
+      officialPrice: officialPriceNum,
       isVeg: foodData.isVeg !== undefined ? Boolean(foodData.isVeg) : true,
       category: (foodData.category || 'lunch').toLowerCase(),
       subCategory: foodData.subCategory || 'General',
@@ -373,6 +379,7 @@ const dataStore = {
       ...foods[idx],
       ...updates,
       price: updates.price !== undefined ? Number(updates.price) : foods[idx].price,
+      officialPrice: updates.officialPrice !== undefined ? Number(updates.officialPrice) : (foods[idx].officialPrice !== undefined ? Number(foods[idx].officialPrice) : foods[idx].price),
       availableQuantity: updates.availableQuantity !== undefined ? Number(updates.availableQuantity) : foods[idx].availableQuantity,
       updatedAt: new Date().toISOString()
     };
@@ -439,9 +446,22 @@ const dataStore = {
       phone: cleanPhone,
       pin: userData.pin || userData.password || '123456',
       passwordUniquenessFingerprint: userData.passwordUniquenessFingerprint || null,
-      avatar: userData.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-      designation: userData.designation || 'IAS Officer • Special Duty',
-      department: userData.department || 'Cabinet Secretariat • Government of India',
+      avatar: (userData.avatar && !userData.avatar.includes('unsplash.com')) ? userData.avatar : '',
+      designation: userData.designation || '',
+      department: userData.department || '',
+      location: userData.location || '',
+      dob: userData.dob || '',
+      marriageDate: userData.marriageDate || '',
+      importantDates: userData.importantDates || '',
+      childrenCount: userData.childrenCount || '',
+      childrenDetails: userData.childrenDetails || '',
+      siblings: userData.siblings || '',
+      dietaryPreferences: userData.dietaryPreferences || '',
+      emergencyContact: userData.emergencyContact || '',
+      bloodGroup: userData.bloodGroup || '',
+      homeAddress: userData.homeAddress || '',
+      role: userData.role || 'user',
+      isOfficial: userData.isOfficial !== undefined ? Boolean(userData.isOfficial) : false,
       officerId: officerId,
       createdAt: new Date().toISOString()
     };
@@ -457,18 +477,22 @@ const dataStore = {
     }
   },
 
+  createUser(userData) {
+    return this.saveUser(userData);
+  },
 
-  updateUserProfile(userId, updates) {
+
+  updateUser(userId, updates) {
     const users = readJSON(USERS_FILE);
     const idx = users.findIndex(u => u.id === userId || u.officerId === userId || String(u._id) === userId);
     if (idx === -1) return null;
-    if (updates.name) users[idx].name = updates.name;
-    if (updates.designation) users[idx].designation = updates.designation;
-    if (updates.location) users[idx].location = updates.location;
-    if (updates.avatar) users[idx].avatar = updates.avatar;
-    users[idx].updatedAt = new Date().toISOString();
+    users[idx] = { ...users[idx], ...updates, updatedAt: new Date().toISOString() };
     writeJSON(USERS_FILE, users);
     return users[idx];
+  },
+
+  updateUserProfile(userId, updates) {
+    return this.updateUser(userId, updates);
   },
 
   updateUserPhone(userId, newPhone) {
@@ -533,10 +557,17 @@ const dataStore = {
       totalAmount: Number(orderData.totalAmount || orderData.subtotal) || 0,
       paymentMethod: orderData.paymentMethod || 'online',
       paymentStatus: orderData.paymentStatus || 'PAYMENT_PENDING',
+      orderType: (String(orderData.orderType || '').toUpperCase() === 'PRE_ORDER' || Boolean(orderData.pickupTime) || orderData.isPreOrder) ? 'PRE_ORDER' : (orderData.orderType || 'INSTANT'),
+      isPreOrder: (String(orderData.orderType || '').toUpperCase() === 'PRE_ORDER' || Boolean(orderData.pickupTime) || Boolean(orderData.isPreOrder)),
+      pickupDate: orderData.pickupDate || (orderData.pickupTime ? new Date().toISOString() : null),
+      pickupTime: orderData.pickupTime || null,
+      slotId: orderData.slotId || null,
+      preOrderSlot: orderData.preOrderSlot || orderData.pickupTime || null,
       orderNote: orderData.orderNote || '',
       mealSlot: orderData.mealSlot || 'General',
-      status: 'PREPARING', // Default to PREPARING for good live feedback
-      tokenNumber: Math.floor(10 + Math.random() * 90),
+      status: (String(orderData.orderType || '').toUpperCase() === 'PRE_ORDER' || orderData.isPreOrder) ? 'PRE_ORDERED' : (orderData.status || 'NEW'),
+      kitchenStatus: orderData.kitchenStatus || 'NEW',
+      tokenNumber: orderData.tokenNumber || Math.floor(10 + Math.random() * 90),
       createdAt: new Date().toISOString()
     };
 

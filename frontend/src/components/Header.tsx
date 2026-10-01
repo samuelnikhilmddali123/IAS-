@@ -10,17 +10,20 @@ import {
 } from 'react-native';
 import { AppIcon } from './AppIcon';
 import { useCanteen } from '../context/CanteenContext';
+import { getDisplayImageUrl } from '../utils/imageUtils';
 
 const EMBLEM_IMAGE = require('../../assets/6a72e4e7-5e3f-43cb-bd57-bac2a1fcb7f4.png');
 
-const OFFICER_AVATAR =
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80';
-
 export const Header: React.FC = () => {
-  const { searchQuery, setSearchQuery, userProfile, setActiveTab } = useCanteen();
+  const { searchQuery, setSearchQuery, userProfile, setActiveTab, totalCartItems } = useCanteen();
   const searchInputRef = useRef<TextInput>(null);
   const [timeStr, setTimeStr] = useState<string>('12:28 PM');
   const [dateStr, setDateStr] = useState<string>('Wed, 17 Sep 2026');
+  const [headerAvatarErr, setHeaderAvatarErr] = useState<boolean>(false);
+
+  useEffect(() => {
+    setHeaderAvatarErr(false);
+  }, [userProfile.avatar]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -93,7 +96,7 @@ export const Header: React.FC = () => {
           </TouchableOpacity>
         </TouchableOpacity>
 
-        {/* Right Section: Time, Notifications, Officer Profile */}
+        {/* Right Section: Time, Cart Button, Officer Profile */}
         <View style={styles.rightSection}>
           {/* Live Date & Time */}
           <View style={styles.timeContainer}>
@@ -101,28 +104,56 @@ export const Header: React.FC = () => {
             <Text style={styles.timeText}>{timeStr}</Text>
           </View>
 
-          {/* Notification Bell */}
-          <TouchableOpacity style={styles.bellBtn} activeOpacity={0.7}>
-            <AppIcon name="notifications-outline" size={18} color="#1e293b" />
-            <View style={styles.notificationDot} />
+          {/* Cart Header Button (Navigates to Cart Screen) */}
+          <TouchableOpacity
+            style={styles.cartHeaderBtn}
+            activeOpacity={0.75}
+            onPress={() => setActiveTab('cart')}
+            accessibilityLabel="Open Cart"
+          >
+            <AppIcon name="cart-outline" size={19} color="#0f172a" />
+            {totalCartItems > 0 && (
+              <View style={styles.cartHeaderBadge}>
+                <Text style={styles.cartHeaderBadgeText}>{totalCartItems}</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           {/* Officer Profile Pill */}
-          <TouchableOpacity
-            style={styles.profilePill}
-            activeOpacity={0.85}
-            onPress={() => setActiveTab('profile')}
-          >
-            <Image
-              source={{ uri: userProfile.avatar || OFFICER_AVATAR }}
-              style={styles.avatar}
-            />
-            <View style={styles.profileTextCol}>
-              <Text style={styles.officerName}>{userProfile.name || 'Officer'}</Text>
-              <Text style={styles.officerRole}>{userProfile.designation || 'Officer'}</Text>
-            </View>
-            <AppIcon name="chevron-down" size={14} color="#64748b" style={{ marginLeft: 6 }} />
-          </TouchableOpacity>
+          {(() => {
+            const headerAvatarUri = getDisplayImageUrl(userProfile.avatar);
+            const showHeaderCustomAvatar = Boolean(
+              headerAvatarUri &&
+              !headerAvatarErr &&
+              !headerAvatarUri.includes('photo-1507003211169')
+            );
+            return (
+              <TouchableOpacity
+                style={styles.profilePill}
+                activeOpacity={0.85}
+                onPress={() => setActiveTab('profile')}
+              >
+                <Image
+                  source={showHeaderCustomAvatar ? { uri: headerAvatarUri } : EMBLEM_IMAGE}
+                  style={styles.avatar}
+                  resizeMode={showHeaderCustomAvatar ? 'cover' : 'contain'}
+                  onError={() => setHeaderAvatarErr(true)}
+                />
+                <View style={styles.profileTextCol}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={styles.officerName}>{userProfile.name || 'Officer'}</Text>
+                    {Boolean(userProfile.isOfficial) && (
+                      <View style={styles.verifiedBadge} accessibilityLabel="Verified Official User">
+                        <AppIcon name="checkmark" size={9} color="#ffffff" />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.officerRole}>{userProfile.designation || (userProfile.isOfficial ? 'Official' : 'Officer')}</Text>
+                </View>
+                <AppIcon name="chevron-down" size={14} color="#64748b" style={{ marginLeft: 6 }} />
+              </TouchableOpacity>
+            );
+          })()}
         </View>
       </View>
     </View>
@@ -232,25 +263,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
   },
-  bellBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  cartHeaderBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#e2e8f0',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  notificationDot: {
+  cartHeaderBadge: {
     position: 'absolute',
-    top: 6,
-    right: 7,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#ef4444',
+    top: -4,
+    right: -4,
+    backgroundColor: '#0a3d31',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  cartHeaderBadgeText: {
+    color: '#ffffff',
+    fontSize: 9.5,
+    fontWeight: '800',
+    lineHeight: 11,
   },
   profilePill: {
     flexDirection: 'row',
@@ -287,5 +334,13 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontWeight: '500',
     lineHeight: 12,
+  },
+  verifiedBadge: {
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

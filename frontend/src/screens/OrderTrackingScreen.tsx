@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -15,6 +15,9 @@ import { BackendOrder } from '../types';
 
 const EMBLEM_IMG = require('../../assets/6a72e4e7-5e3f-43cb-bd57-bac2a1fcb7f4.png');
 
+// Duration to display newly rejected orders prominently at the top before moving to bottom history (5 minutes)
+const RECENT_REJECTION_MS = 5 * 60 * 1000;
+
 const STATUS_STAGES: Array<{
   key: string;
   label: string;
@@ -22,19 +25,18 @@ const STATUS_STAGES: Array<{
   icon: IconName;
 }> = [
   { key: 'NEW', label: 'Order Placed', sublabel: 'Received at canteen desk', icon: 'checkmark-circle' },
-  { key: 'ACCEPTED', label: 'Accepted', sublabel: 'Confirmed by kitchen', icon: 'checkmark-done-circle' },
-  { key: 'PREPARING', label: 'Preparing', sublabel: 'Chef cooking your meal', icon: 'restaurant' },
+  { key: 'PREPARING', label: 'Preparing Food', sublabel: 'Chef cooking your meal', icon: 'restaurant' },
   { key: 'READY', label: 'Ready', sublabel: 'Ready at pickup counter', icon: 'notifications-outline' },
-  { key: 'COMPLETED', label: 'Completed', sublabel: 'Handed over / collected', icon: 'checkmark-circle' },
+  { key: 'COMPLETED', label: 'Completed', sublabel: 'Order fulfilled & collected', icon: 'checkmark-done-circle' },
 ];
 
 function getStageIndex(status?: string): number {
   const s = (status || 'NEW').toUpperCase();
   if (s === 'PRE_ORDERED' || s === 'PENDING' || s === 'NEW') return 0;
-  if (s === 'ACCEPTED') return 1;
-  if (s === 'PREPARING') return 2;
-  if (s === 'READY') return 3;
-  if (s === 'COMPLETED' || s === 'DELIVERED') return 4;
+  if (s === 'ACCEPTED' || s === 'PREPARING') return 1;
+  if (s === 'READY') return 2;
+  if (s === 'COMPLETED' || s === 'DELIVERED') return 3;
+  if (s === 'CANCELLED' || s === 'REJECTED') return -1;
   return 0;
 }
 
@@ -86,10 +88,46 @@ export const OrderTrackingScreen: React.FC = () => {
   const [paySuccessMsg, setPaySuccessMsg] = useState<string | null>(null);
   const [payErrorMsg, setPayErrorMsg] = useState<string | null>(null);
 
+  // Live timer tick to automatically transition expired rejected orders from top to bottom
+  const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
+  const [dismissedFromTop, setDismissedFromTop] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTimestamp(Date.now());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 0. All Rejected / Cancelled Orders
+  const rejectedOrders = orderHistory.filter((o) => {
+    const s = (o.kitchenStatus || o.status || '').toUpperCase();
+    return s === 'CANCELLED' || s === 'REJECTED';
+  });
+
+  // Helper to determine if rejected order is "recent" (placed/rejected within RECENT_REJECTION_MS and not dismissed)
+  const isRecentlyRejected = (o: BackendOrder) => {
+    const key = String(o.id || o._id || o.orderNumber);
+    if (dismissedFromTop[key]) return false;
+
+    const rawDate = o.updatedAt || o.createdAt;
+    if (!rawDate) return false;
+    const t = new Date(rawDate).getTime();
+    if (isNaN(t)) return false;
+
+    return (nowTimestamp - t) < RECENT_REJECTION_MS;
+  };
+
+  // Top Section: Recent Rejections (Shown at top for 5 mins)
+  const recentlyRejectedOrders = rejectedOrders.filter((o) => isRecentlyRejected(o));
+
+  // Bottom Section: Older Rejections (Moved to bottom of all orders)
+  const olderRejectedOrders = rejectedOrders.filter((o) => !isRecentlyRejected(o));
+
   // 1. Active orders (in progress: NEW, ACCEPTED, PREPARING, READY)
   const activeOrders = orderHistory.filter((o) => {
     const s = (o.kitchenStatus || o.status || '').toUpperCase();
-    return s !== 'COMPLETED' && s !== 'DELIVERED' && s !== 'CANCELLED';
+    return s !== 'COMPLETED' && s !== 'DELIVERED' && s !== 'CANCELLED' && s !== 'REJECTED';
   });
 
   // 2. Unpaid completed orders (Payment Due)
@@ -260,6 +298,113 @@ export const OrderTrackingScreen: React.FC = () => {
           Real-time updates active via Kitchen Socket.IO link
         </Text>
       </View>
+
+      {/* ========================================================================= */}
+      {/* SECTION 0: RECENTLY REJECTED ORDERS (SHOW AT TOP FOR 5 MINUTES)           */}
+      {/* ========================================================================= */}
+      {recentlyRejectedOrders.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.rejectedSectionBadge}>
+              <AppIcon name="alert-circle" size={14} color="#dc2626" style={{ marginRight: 5 }} />
+              <Text style={styles.rejectedSectionBadgeText}>Urgent Notice</Text>
+            </View>
+            <Text style={styles.sectionTitleRejected}>
+              Recently Rejected Orders ({recentlyRejectedOrders.length})
+            </Text>
+          </View>
+
+          {recentlyRejectedOrders.map((order) => {
+            const rawTime = order.updatedAt || order.createdAt;
+            const elapsedMs = rawTime ? Math.max(0, nowTimestamp - new Date(rawTime).getTime()) : 0;
+            const remainingMin = Math.max(1, Math.ceil((RECENT_REJECTION_MS - elapsedMs) / 60000));
+
+            return (
+              <View key={order.id || order.orderNumber} style={styles.rejectedOrderCard}>
+                <View style={styles.rejectedCardHeader}>
+                  <View>
+                    <View style={styles.orderNumberRow}>
+                      <Text style={styles.rejectedOrderNumber}>Order #{order.orderNumber}</Text>
+                      {order.tokenNumber ? (
+                        <View style={styles.tokenPill}>
+                          <Text style={styles.tokenPillText}>Token #{order.tokenNumber}</Text>
+                        </View>
+                      ) : null}
+                      <View style={styles.badgeRejectedSmall}>
+                        <AppIcon name="close" size={10} color="#ffffff" style={{ marginRight: 3 }} />
+                        <Text style={styles.badgeRejectedSmallText}>ORDER REJECTED</Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                      <Text style={styles.cardTimeText}>
+                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : ''} at{' '}
+                        {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </Text>
+                      <Text style={styles.topDurationBadge}>
+                        • Showing at top ({remainingMin}m remaining)
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.rejectedAmountBox}>
+                    <Text style={styles.rejectedAmountLabel}>STATUS</Text>
+                    <Text style={styles.rejectedAmountValue}>REJECTED</Text>
+                  </View>
+                </View>
+
+                {/* Notice Message Banner */}
+                <View style={styles.rejectionNoticeBanner}>
+                  <AppIcon name="alert-circle" size={18} color="#b91c1c" style={{ marginRight: 8, marginTop: 1 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rejectionNoticeTitle}>Order Declined by Kitchen</Text>
+                    <Text style={styles.rejectionNoticeDesc}>
+                      This order was declined by the kitchen team. You will not be charged or billed for this order. It will automatically move to bottom history after 5 minutes.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Items List */}
+                <View style={styles.itemsDivider} />
+                <View style={styles.itemsList}>
+                  {(order.items || []).map((item, iIdx) => (
+                    <View key={iIdx} style={styles.itemRow}>
+                      <Text style={styles.itemQuantity}>{item.quantity}×</Text>
+                      <Text style={[styles.itemName, { textDecorationLine: 'line-through', color: '#94a3b8' }]} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={[styles.itemPrice, { color: '#94a3b8' }]}>₹{item.price * item.quantity}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Card Actions */}
+                <View style={styles.rejectedCardActionsRow}>
+                  <TouchableOpacity
+                    style={styles.dismissToBottomBtn}
+                    onPress={() => {
+                      const key = String(order.id || order._id || order.orderNumber);
+                      setDismissedFromTop((prev) => ({ ...prev, [key]: true }));
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <AppIcon name="arrow-down-circle-outline" size={13} color="#475569" style={{ marginRight: 4 }} />
+                    <Text style={styles.dismissToBottomBtnText}>Move to Bottom</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.reorderBtn}
+                    onPress={() => setActiveTab('home')}
+                    activeOpacity={0.85}
+                  >
+                    <AppIcon name="restaurant" size={14} color="#ffffff" style={{ marginRight: 6 }} />
+                    <Text style={styles.reorderBtnText}>Browse Menu & Re-Order ➔</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       {/* ========================================================================= */}
       {/* SECTION 1: TODAY'S CONSOLIDATED PAYMENT DUE BILLS                        */}
@@ -569,8 +714,8 @@ export const OrderTrackingScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Empty State if No Active and No Due Orders */}
-      {activeOrders.length === 0 && unpaidCompletedOrders.length === 0 && (
+      {/* Empty State if No Active, No Due, and No Recent Rejected Orders */}
+      {activeOrders.length === 0 && unpaidCompletedOrders.length === 0 && recentlyRejectedOrders.length === 0 && (
         <View style={styles.emptyActiveState}>
           <AppIcon name="restaurant-outline" size={36} color="#94a3b8" />
           <Text style={styles.emptyActiveTitle}>No Active Orders</Text>
@@ -579,7 +724,7 @@ export const OrderTrackingScreen: React.FC = () => {
           </Text>
           <TouchableOpacity
             style={styles.browseMenuBtn}
-            onPress={() => setActiveTab('menu')}
+            onPress={() => setActiveTab('home')}
             activeOpacity={0.8}
           >
             <Text style={styles.browseMenuBtnText}>Browse Menu ➔</Text>
@@ -630,6 +775,70 @@ export const OrderTrackingScreen: React.FC = () => {
                 >
                   <AppIcon name="document-text-outline" size={14} color="#0d3829" style={{ marginRight: 4 }} />
                   <Text style={styles.pastOrderReceiptText}>View Receipt</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SECTION 4: DECLINED & REJECTED ORDERS (MOVED TO BOTTOM OF ALL ORDERS)     */}
+      {/* ========================================================================= */}
+      {olderRejectedOrders.length > 0 && (
+        <View style={[styles.section, { marginTop: 24, marginBottom: 20 }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.olderRejectedSectionBadge}>
+              <AppIcon name="close-circle" size={14} color="#64748b" style={{ marginRight: 5 }} />
+              <Text style={styles.olderRejectedSectionBadgeText}>History</Text>
+            </View>
+            <Text style={styles.sectionTitleMuted}>
+              Declined & Rejected Orders ({olderRejectedOrders.length})
+            </Text>
+          </View>
+
+          {olderRejectedOrders.map((order) => (
+            <View key={order.id || order.orderNumber} style={styles.olderRejectedOrderCard}>
+              <View style={styles.pastOrderHeader}>
+                <View>
+                  <View style={styles.orderNumberRow}>
+                    <Text style={styles.olderRejectedOrderNumber}>Order #{order.orderNumber}</Text>
+                    {order.tokenNumber ? (
+                      <View style={styles.tokenPillMuted}>
+                        <Text style={styles.tokenPillMutedText}>Token #{order.tokenNumber}</Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.badgeRejectedMuted}>
+                      <Text style={styles.badgeRejectedMutedText}>DECLINED</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.cardTimeText}>
+                    {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : ''} at{' '}
+                    {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                  </Text>
+                </View>
+
+                <View style={styles.rejectedAmountBoxMuted}>
+                  <Text style={styles.rejectedAmountLabelMuted}>NOT BILLED</Text>
+                  <Text style={styles.rejectedAmountValueMuted}>₹0.00</Text>
+                </View>
+              </View>
+
+              <Text style={styles.pastOrderItems}>
+                {(order.items || []).map((i) => `${i.quantity}x ${i.name}`).join(', ')}
+              </Text>
+
+              <View style={styles.pastOrderFooter}>
+                <Text style={styles.olderRejectedReasonText}>
+                  Declined by kitchen • No charges applied
+                </Text>
+                <TouchableOpacity
+                  style={styles.reorderSmallBtn}
+                  onPress={() => setActiveTab('home')}
+                  activeOpacity={0.8}
+                >
+                  <AppIcon name="restaurant" size={12} color="#0d3829" style={{ marginRight: 4 }} />
+                  <Text style={styles.reorderSmallBtnText}>Re-Order</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -861,67 +1070,150 @@ export const OrderTrackingScreen: React.FC = () => {
         onRequestClose={() => setSelectedBillBatch(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.billModalCard}>
-            <View style={styles.billHeader}>
-              <Image source={EMBLEM_IMG} style={styles.billEmblem} resizeMode="contain" />
-              <Text style={styles.billOrgTitle}>IAS OFFICERS CANTEEN</Text>
-              <Text style={styles.billOrgSub}>Cabinet Secretariat • Government of India</Text>
-              <Text style={styles.billReceiptTag}>TODAY'S CONSOLIDATED INVOICE</Text>
-            </View>
+          <View style={styles.receiptCardWrapper}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+              {/* Receipt Header */}
+              <View style={styles.rcBrandHeader}>
+                <View style={styles.rcBrandLogoCol}>
+                  <View style={styles.rcCircleLogo}>
+                    <AppIcon name="restaurant" size={24} color="#ffffff" />
+                  </View>
+                </View>
+                <View style={styles.rcBrandVDivider} />
+                <View style={styles.rcBrandCenterCol}>
+                  <Text style={styles.rcBrandTitle}>CANTEEN{"\n"}SERVICES</Text>
+                  <Text style={styles.rcBrandSlogan}>GOOD FOOD{"\n"}GREATER SERVICE</Text>
+                </View>
+                <View style={styles.rcBrandVDivider} />
+                <View style={styles.rcBrandRightCol}>
+                  <Text style={styles.rcBrandPillText}>FRESH</Text>
+                  <Text style={styles.rcBrandPillText}>HYGIENIC</Text>
+                  <Text style={styles.rcBrandPillText}>NUTRITIOUS</Text>
+                  <Text style={styles.rcBrandPillText}>FOR A BETTER YOU</Text>
+                </View>
+              </View>
 
-            <View style={styles.billMetaGrid}>
-              <View>
-                <Text style={styles.billMetaLabel}>Orders Included</Text>
-                <Text style={styles.billMetaVal}>{selectedBillBatch?.orders.length} Orders</Text>
+              {/* Food Bill Pill */}
+              <View style={styles.rcPillContainer}>
+                <View style={styles.rcPillBanner}>
+                  <Text style={styles.rcPillBannerText}>FOOD BILL</Text>
+                </View>
+                <Text style={styles.rcPillSubtitle}>THANK YOU FOR DINING WITH US</Text>
               </View>
-              <View>
-                <Text style={styles.billMetaLabel}>Date</Text>
-                <Text style={styles.billMetaVal}>{new Date().toLocaleDateString()}</Text>
-              </View>
-              <View>
-                <Text style={styles.billMetaLabel}>Officer Name</Text>
-                <Text style={styles.billMetaVal}>{userProfile.name || 'IAS Officer'}</Text>
-              </View>
-              <View>
-                <Text style={styles.billMetaLabel}>Status</Text>
-                <Text style={[styles.billMetaVal, { color: '#dc2626', fontWeight: '800' }]}>
-                  UNPAID
-                </Text>
-              </View>
-            </View>
 
-            <View style={styles.billTable}>
-              <View style={styles.billTableHeader}>
-                <Text style={[styles.billTh, { flex: 2 }]}>Item</Text>
-                <Text style={[styles.billTh, { width: 45, textAlign: 'center' }]}>Qty</Text>
-                <Text style={[styles.billTh, { width: 65, textAlign: 'right' }]}>Price</Text>
-                <Text style={[styles.billTh, { width: 75, textAlign: 'right' }]}>Total</Text>
+              {/* Meta & Table Box */}
+              <View style={styles.rcMetaSection}>
+                <View style={styles.rcMetaLeft}>
+                  <View style={styles.rcMetaRow}>
+                    <Text style={styles.rcMetaLabel}>Bill No</Text>
+                    <Text style={styles.rcMetaColon}>:</Text>
+                    <Text style={[styles.rcMetaVal, { fontWeight: '800' }]}>#CS{new Date().toISOString().slice(2, 10).replace(/-/g, '')}</Text>
+                  </View>
+                  <View style={styles.rcMetaRow}>
+                    <Text style={styles.rcMetaLabel}>Date</Text>
+                    <Text style={styles.rcMetaColon}>:</Text>
+                    <Text style={styles.rcMetaVal}>{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</Text>
+                  </View>
+                  <View style={styles.rcMetaRow}>
+                    <Text style={styles.rcMetaLabel}>Time</Text>
+                    <Text style={styles.rcMetaColon}>:</Text>
+                    <Text style={styles.rcMetaVal}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</Text>
+                  </View>
+                  <View style={styles.rcMetaRow}>
+                    <Text style={styles.rcMetaLabel}>Table</Text>
+                    <Text style={styles.rcMetaColon}>:</Text>
+                    <Text style={styles.rcMetaVal}>T-08</Text>
+                  </View>
+                  <View style={styles.rcMetaRow}>
+                    <Text style={styles.rcMetaLabel}>Order Type</Text>
+                    <Text style={styles.rcMetaColon}>:</Text>
+                    <Text style={styles.rcMetaVal}>Dine In</Text>
+                  </View>
+                </View>
+
+                <View style={styles.rcTableBadgeBox}>
+                  <Text style={styles.rcTableBadgeHeader}>TABLE</Text>
+                  <Text style={styles.rcTableBadgeMain}>T-08</Text>
+                  <View style={styles.rcTableBadgeDivider} />
+                  <Text style={styles.rcTableBadgeFooter}>HAVE A GREAT DAY</Text>
+                </View>
+              </View>
+
+              {/* Dashed Line */}
+              <View style={styles.rcDashedDivider} />
+
+              {/* Items Table */}
+              <View style={styles.rcTableHeader}>
+                <Text style={[styles.rcTh, { width: 22 }]}>#</Text>
+                <Text style={[styles.rcTh, { flex: 1 }]}>ITEM</Text>
+                <Text style={[styles.rcTh, { width: 36, textAlign: 'center' }]}>QTY</Text>
+                <Text style={[styles.rcTh, { width: 55, textAlign: 'right' }]}>RATE</Text>
+                <Text style={[styles.rcTh, { width: 65, textAlign: 'right' }]}>AMOUNT</Text>
               </View>
 
               {(selectedBillBatch?.orders || []).flatMap((o) => o.items || []).map((item, idx) => (
-                <View key={idx} style={styles.billTableRow}>
-                  <Text style={[styles.billTd, { flex: 2 }]}>{item.name}</Text>
-                  <Text style={[styles.billTd, { width: 45, textAlign: 'center' }]}>{item.quantity}</Text>
-                  <Text style={[styles.billTd, { width: 65, textAlign: 'right' }]}>₹{item.price}</Text>
-                  <Text style={[styles.billTd, { width: 75, textAlign: 'right', fontWeight: '700' }]}>
-                    ₹{item.price * item.quantity}
-                  </Text>
+                <View key={idx} style={styles.rcTableRow}>
+                  <Text style={[styles.rcTd, { width: 22 }]}>{idx + 1}</Text>
+                  <Text style={[styles.rcTd, { flex: 1, fontWeight: '500' }]}>{item.name}</Text>
+                  <Text style={[styles.rcTd, { width: 36, textAlign: 'center' }]}>{item.quantity}</Text>
+                  <Text style={[styles.rcTd, { width: 55, textAlign: 'right' }]}>₹{(item.price || 0).toFixed(0)}</Text>
+                  <Text style={[styles.rcTd, { width: 65, textAlign: 'right', fontWeight: '700' }]}>₹{((item.price || 0) * (item.quantity || 1)).toFixed(0)}</Text>
                 </View>
               ))}
 
-              <View style={styles.billTotalRow}>
-                <Text style={styles.billTotalLabel}>Grand Total</Text>
-                <Text style={styles.billTotalVal}>₹{selectedBillBatch?.totalAmount}</Text>
+              {/* Totals Section */}
+              <View style={styles.rcTotalsWrapper}>
+                <View style={[styles.rcTotalsRow, { marginTop: 2 }]}>
+                  <Text style={[styles.rcTotLabel, { fontWeight: '900', fontSize: 13 }]}>TOTAL AMOUNT</Text>
+                  <Text style={[styles.rcTotVal, { fontWeight: '900', fontSize: 16 }]}>₹{(selectedBillBatch?.totalAmount || 0).toFixed(0)}</Text>
+                </View>
               </View>
-            </View>
 
-            <TouchableOpacity
-              style={styles.closeBillBtn}
-              onPress={() => setSelectedBillBatch(null)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.closeBillBtnText}>Close Receipt</Text>
-            </TouchableOpacity>
+              {/* Dashed Line */}
+              <View style={styles.rcDashedDivider} />
+
+              {/* Delight Footer */}
+              <View style={styles.rcDelightSection}>
+                <View style={styles.rcDelightLeft}>
+                  <AppIcon name="restaurant" size={24} color="#000000" />
+                  <View style={{ marginLeft: 6 }}>
+                    <Text style={styles.rcDelightText}>GOOD FOOD</Text>
+                    <Text style={styles.rcDelightText}>BRIGHTER DAYS</Text>
+                  </View>
+                </View>
+                <View style={styles.rcDelightRight}>
+                  <Text style={styles.rcScriptThankYou}>Thank You!</Text>
+                  <Text style={styles.rcVisitAgain}>VISIT AGAIN</Text>
+                </View>
+              </View>
+
+              {/* Dashed Line */}
+              <View style={styles.rcDashedDivider} />
+
+              {/* Feedback Section */}
+              <View style={styles.rcFeedbackSection}>
+                <AppIcon name="qr-code-outline" size={38} color="#000000" />
+                <View style={styles.rcFeedbackVDivider} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rcFeedbackMain}>Scan to share your feedback</Text>
+                  <Text style={styles.rcFeedbackSub}>YOUR FEEDBACK HELPS US SERVE BETTER</Text>
+                </View>
+              </View>
+
+              {/* Bottom Branding */}
+              <View style={styles.rcBottomBranding}>
+                <Text style={styles.rcBottomTitle}>CANTEEN SERVICES</Text>
+                <Text style={styles.rcBottomSub}>GOOD FOOD. GREATER SERVICE.</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.closeBillBtn}
+                onPress={() => setSelectedBillBatch(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.closeBillBtnText}>Close Receipt</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -936,80 +1228,178 @@ export const OrderTrackingScreen: React.FC = () => {
         onRequestClose={() => setSelectedBillOrder(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.billModalCard}>
-            <View style={styles.billHeader}>
-              <Image source={EMBLEM_IMG} style={styles.billEmblem} resizeMode="contain" />
-              <Text style={styles.billOrgTitle}>IAS OFFICERS CANTEEN</Text>
-              <Text style={styles.billOrgSub}>Cabinet Secretariat • Government of India</Text>
-              <Text style={styles.billReceiptTag}>OFFICIAL RECEIPT / INVOICE</Text>
-            </View>
+          <View style={styles.receiptCardWrapper}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+              {(() => {
+                const invNum = selectedBillOrder?.orderNumber
+                  ? (selectedBillOrder.orderNumber.startsWith('INV-') || selectedBillOrder.orderNumber.startsWith('#') ? selectedBillOrder.orderNumber : `#CS${selectedBillOrder.orderNumber.replace(/\D/g, '').slice(-6).padStart(6, '0') || '241027'}`)
+                  : '#CS241027';
+                const createdAtDate = selectedBillOrder?.createdAt ? new Date(selectedBillOrder.createdAt) : new Date();
+                const dateFormatted = createdAtDate.toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                });
+                const timeFormatted = createdAtDate.toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                });
+                const tokenNo = selectedBillOrder?.tokenNumber || (selectedBillOrder?.orderNumber ? selectedBillOrder.orderNumber.slice(-2) : '08');
+                const tableStr = `T-${String(tokenNo).padStart(2, '0')}`;
+                const totalAmt = Number(selectedBillOrder?.totalAmount || 0);
+                const gstAmt = Math.round(totalAmt * 0.05);
+                const subtotalAmt = totalAmt - gstAmt > 0 ? totalAmt - gstAmt : totalAmt;
 
-            <View style={styles.billMetaGrid}>
-              <View>
-                <Text style={styles.billMetaLabel}>Order Number</Text>
-                <Text style={styles.billMetaVal}>#{selectedBillOrder?.orderNumber}</Text>
-              </View>
-              <View>
-                <Text style={styles.billMetaLabel}>Date & Time</Text>
-                <Text style={styles.billMetaVal}>
-                  {selectedBillOrder?.createdAt ? new Date(selectedBillOrder.createdAt).toLocaleDateString() : ''}
-                </Text>
-              </View>
-              <View>
-                <Text style={styles.billMetaLabel}>Officer Name</Text>
-                <Text style={styles.billMetaVal}>{selectedBillOrder?.userName || userProfile.name || 'IAS Officer'}</Text>
-              </View>
-              <View>
-                <Text style={styles.billMetaLabel}>Payment Status</Text>
-                <Text style={[
-                  styles.billMetaVal,
-                  { color: selectedBillOrder?.paymentStatus === 'PAID' ? '#15803d' : '#dc2626', fontWeight: '800' }
-                ]}>
-                  {selectedBillOrder?.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID'}
-                </Text>
-              </View>
-            </View>
+                return (
+                  <>
+                    {/* Brand Header */}
+                    <View style={styles.rcBrandHeader}>
+                      <View style={styles.rcBrandLogoCol}>
+                        <View style={styles.rcCircleLogo}>
+                          <AppIcon name="restaurant" size={24} color="#ffffff" />
+                        </View>
+                      </View>
+                      <View style={styles.rcBrandVDivider} />
+                      <View style={styles.rcBrandCenterCol}>
+                        <Text style={styles.rcBrandTitle}>CANTEEN{"\n"}SERVICES</Text>
+                        <Text style={styles.rcBrandSlogan}>GOOD FOOD{"\n"}GREATER SERVICE</Text>
+                      </View>
+                      <View style={styles.rcBrandVDivider} />
+                      <View style={styles.rcBrandRightCol}>
+                        <Text style={styles.rcBrandPillText}>FRESH</Text>
+                        <Text style={styles.rcBrandPillText}>HYGIENIC</Text>
+                        <Text style={styles.rcBrandPillText}>NUTRITIOUS</Text>
+                        <Text style={styles.rcBrandPillText}>FOR A BETTER YOU</Text>
+                      </View>
+                    </View>
 
-            <View style={styles.billTable}>
-              <View style={styles.billTableHeader}>
-                <Text style={[styles.billTh, { flex: 2 }]}>Item</Text>
-                <Text style={[styles.billTh, { width: 45, textAlign: 'center' }]}>Qty</Text>
-                <Text style={[styles.billTh, { width: 65, textAlign: 'right' }]}>Price</Text>
-                <Text style={[styles.billTh, { width: 75, textAlign: 'right' }]}>Total</Text>
-              </View>
+                    {/* Food Bill Pill */}
+                    <View style={styles.rcPillContainer}>
+                      <View style={styles.rcPillBanner}>
+                        <Text style={styles.rcPillBannerText}>FOOD BILL</Text>
+                      </View>
+                      <Text style={styles.rcPillSubtitle}>THANK YOU FOR DINING WITH US</Text>
+                    </View>
 
-              {(selectedBillOrder?.items || []).map((item, idx) => (
-                <View key={idx} style={styles.billTableRow}>
-                  <Text style={[styles.billTd, { flex: 2 }]}>{item.name}</Text>
-                  <Text style={[styles.billTd, { width: 45, textAlign: 'center' }]}>{item.quantity}</Text>
-                  <Text style={[styles.billTd, { width: 65, textAlign: 'right' }]}>₹{item.price}</Text>
-                  <Text style={[styles.billTd, { width: 75, textAlign: 'right', fontWeight: '700' }]}>
-                    ₹{item.price * item.quantity}
-                  </Text>
-                </View>
-              ))}
+                    {/* Meta Info & Table Box */}
+                    <View style={styles.rcMetaSection}>
+                      <View style={styles.rcMetaLeft}>
+                        <View style={styles.rcMetaRow}>
+                          <Text style={styles.rcMetaLabel}>Bill No</Text>
+                          <Text style={styles.rcMetaColon}>:</Text>
+                          <Text style={[styles.rcMetaVal, { fontWeight: '800' }]}>{invNum}</Text>
+                        </View>
+                        <View style={styles.rcMetaRow}>
+                          <Text style={styles.rcMetaLabel}>Date</Text>
+                          <Text style={styles.rcMetaColon}>:</Text>
+                          <Text style={styles.rcMetaVal}>{dateFormatted}</Text>
+                        </View>
+                        <View style={styles.rcMetaRow}>
+                          <Text style={styles.rcMetaLabel}>Time</Text>
+                          <Text style={styles.rcMetaColon}>:</Text>
+                          <Text style={styles.rcMetaVal}>{timeFormatted}</Text>
+                        </View>
+                        <View style={styles.rcMetaRow}>
+                          <Text style={styles.rcMetaLabel}>Table</Text>
+                          <Text style={styles.rcMetaColon}>:</Text>
+                          <Text style={styles.rcMetaVal}>{tableStr}</Text>
+                        </View>
+                        <View style={styles.rcMetaRow}>
+                          <Text style={styles.rcMetaLabel}>Order Type</Text>
+                          <Text style={styles.rcMetaColon}>:</Text>
+                          <Text style={styles.rcMetaVal}>Dine In</Text>
+                        </View>
+                      </View>
 
-              <View style={styles.billSummaryRow}>
-                <Text style={styles.billSummaryLabel}>Subtotal</Text>
-                <Text style={styles.billSummaryVal}>₹{selectedBillOrder?.subtotal || selectedBillOrder?.totalAmount}</Text>
-              </View>
-              <View style={styles.billSummaryRow}>
-                <Text style={styles.billSummaryLabel}>Taxes & Surcharge</Text>
-                <Text style={styles.billSummaryVal}>₹0</Text>
-              </View>
-              <View style={styles.billTotalRow}>
-                <Text style={styles.billTotalLabel}>Grand Total</Text>
-                <Text style={styles.billTotalVal}>₹{selectedBillOrder?.totalAmount}</Text>
-              </View>
-            </View>
+                      <View style={styles.rcTableBadgeBox}>
+                        <Text style={styles.rcTableBadgeHeader}>TABLE</Text>
+                        <Text style={styles.rcTableBadgeMain}>{tableStr}</Text>
+                        <View style={styles.rcTableBadgeDivider} />
+                        <Text style={styles.rcTableBadgeFooter}>HAVE A GREAT DAY</Text>
+                      </View>
+                    </View>
 
-            <TouchableOpacity
-              style={styles.closeBillBtn}
-              onPress={() => setSelectedBillOrder(null)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.closeBillBtnText}>Close Receipt</Text>
-            </TouchableOpacity>
+                    {/* Dashed Line */}
+                    <View style={styles.rcDashedDivider} />
+
+                    {/* Items Table */}
+                    <View style={styles.rcTableHeader}>
+                      <Text style={[styles.rcTh, { width: 22 }]}>#</Text>
+                      <Text style={[styles.rcTh, { flex: 1 }]}>ITEM</Text>
+                      <Text style={[styles.rcTh, { width: 36, textAlign: 'center' }]}>QTY</Text>
+                      <Text style={[styles.rcTh, { width: 55, textAlign: 'right' }]}>RATE</Text>
+                      <Text style={[styles.rcTh, { width: 65, textAlign: 'right' }]}>AMOUNT</Text>
+                    </View>
+
+                    {(selectedBillOrder?.items || []).map((item, idx) => (
+                      <View key={idx} style={styles.rcTableRow}>
+                        <Text style={[styles.rcTd, { width: 22 }]}>{idx + 1}</Text>
+                        <Text style={[styles.rcTd, { flex: 1, fontWeight: '500' }]}>{item.name}</Text>
+                        <Text style={[styles.rcTd, { width: 36, textAlign: 'center' }]}>{item.quantity}</Text>
+                        <Text style={[styles.rcTd, { width: 55, textAlign: 'right' }]}>₹{(item.price || 0).toFixed(0)}</Text>
+                        <Text style={[styles.rcTd, { width: 65, textAlign: 'right', fontWeight: '700' }]}>
+                          ₹{((item.price || 0) * (item.quantity || 1)).toFixed(0)}
+                        </Text>
+                      </View>
+                    ))}
+
+                    {/* Totals Section */}
+                    <View style={styles.rcTotalsWrapper}>
+                      <View style={[styles.rcTotalsRow, { marginTop: 2 }]}>
+                        <Text style={[styles.rcTotLabel, { fontWeight: '900', fontSize: 13 }]}>TOTAL AMOUNT</Text>
+                        <Text style={[styles.rcTotVal, { fontWeight: '900', fontSize: 16 }]}>₹{totalAmt.toFixed(0)}</Text>
+                      </View>
+                    </View>
+
+                    {/* Dashed Line */}
+                    <View style={styles.rcDashedDivider} />
+
+                    {/* Delight Footer */}
+                    <View style={styles.rcDelightSection}>
+                      <View style={styles.rcDelightLeft}>
+                        <AppIcon name="restaurant" size={24} color="#000000" />
+                        <View style={{ marginLeft: 6 }}>
+                          <Text style={styles.rcDelightText}>GOOD FOOD</Text>
+                          <Text style={styles.rcDelightText}>BRIGHTER DAYS</Text>
+                        </View>
+                      </View>
+                      <View style={styles.rcDelightRight}>
+                        <Text style={styles.rcScriptThankYou}>Thank You!</Text>
+                        <Text style={styles.rcVisitAgain}>VISIT AGAIN</Text>
+                      </View>
+                    </View>
+
+                    {/* Dashed Line */}
+                    <View style={styles.rcDashedDivider} />
+
+                    {/* Feedback Section */}
+                    <View style={styles.rcFeedbackSection}>
+                      <AppIcon name="qr-code-outline" size={38} color="#000000" />
+                      <View style={styles.rcFeedbackVDivider} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rcFeedbackMain}>Scan to share your feedback</Text>
+                        <Text style={styles.rcFeedbackSub}>YOUR FEEDBACK HELPS US SERVE BETTER</Text>
+                      </View>
+                    </View>
+
+                    {/* Bottom Branding */}
+                    <View style={styles.rcBottomBranding}>
+                      <Text style={styles.rcBottomTitle}>CANTEEN SERVICES</Text>
+                      <Text style={styles.rcBottomSub}>GOOD FOOD. GREATER SERVICE.</Text>
+                    </View>
+                  </>
+                );
+              })()}
+
+              <TouchableOpacity
+                style={styles.closeBillBtn}
+                onPress={() => setSelectedBillOrder(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.closeBillBtnText}>Close Receipt</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1328,25 +1718,27 @@ const styles = StyleSheet.create({
   },
   stepperContainer: {
     marginTop: 14,
-    marginBottom: 10,
+    marginBottom: 12,
+    width: '100%',
   },
   stepperTrack: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
   },
   stepNodeContainer: {
     alignItems: 'center',
-    width: 58,
+    width: 80,
   },
   stepNodeCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: '#cbd5e1',
   },
   stepNodeDone: {
@@ -1358,10 +1750,10 @@ const styles = StyleSheet.create({
     borderColor: '#0d3829',
   },
   nodeLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '600',
     color: '#64748b',
-    marginTop: 4,
+    marginTop: 5,
     textAlign: 'center',
   },
   nodeLabelCurrent: {
@@ -1374,9 +1766,10 @@ const styles = StyleSheet.create({
   },
   stepLine: {
     flex: 1,
-    height: 2,
+    height: 2.5,
     backgroundColor: '#e2e8f0',
-    marginBottom: 16,
+    marginBottom: 18,
+    marginHorizontal: 2,
   },
   stepLineDone: {
     backgroundColor: '#16a34a',
@@ -1772,138 +2165,727 @@ const styles = StyleSheet.create({
   },
   billModalCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: 14,
     width: '100%',
-    maxWidth: 440,
-    padding: 20,
-    maxHeight: '90%',
-  },
-  billHeader: {
-    alignItems: 'center',
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    marginBottom: 12,
-  },
-  billEmblem: {
-    width: 32,
-    height: 32,
-    marginBottom: 4,
-  },
-  billOrgTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0d3829',
-    letterSpacing: 0.5,
-  },
-  billOrgSub: {
-    fontSize: 9.5,
-    color: '#64748b',
-    marginTop: 1,
-  },
-  billReceiptTag: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#0d3829',
-    backgroundColor: '#e6f4ea',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 6,
-    letterSpacing: 0.5,
-  },
-  billMetaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-    gap: 12,
-  },
-  billMetaLabel: {
-    fontSize: 9,
-    color: '#64748b',
-    textTransform: 'uppercase',
-  },
-  billMetaVal: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginTop: 1,
-  },
-  billTable: {
+    maxWidth: 620,
+    maxHeight: '92%',
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#cbd5e1',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  billTaxHeader: {
+    backgroundColor: '#0d3829',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  billTaxHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  billEmblemLarge: {
+    width: 44,
+    height: 48,
+  },
+  billTaxOrgTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  billTaxOrgSub: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 9.5,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  billTaxDocType: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 8.5,
+    fontWeight: '700',
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
+  billTaxStatusPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
-    padding: 10,
-    marginBottom: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
   },
-  billTableHeader: {
-    flexDirection: 'row',
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    marginBottom: 6,
-  },
-  billTh: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#475569',
-    textTransform: 'uppercase',
-  },
-  billTableRow: {
-    flexDirection: 'row',
-    paddingVertical: 4,
-  },
-  billTd: {
-    fontSize: 11,
-    color: '#1e293b',
-  },
-  billSummaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    marginTop: 6,
-  },
-  billSummaryLabel: {
-    fontSize: 10.5,
-    color: '#64748b',
-  },
-  billSummaryVal: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  billTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#0d3829',
-    marginTop: 6,
-  },
-  billTotalLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0d3829',
-  },
-  billTotalVal: {
+  billTaxStatusPillText: {
+    color: '#ffffff',
     fontSize: 14,
     fontWeight: '900',
-    color: '#0d3829',
+  },
+  billTaxStatusPillSub: {
+    color: '#ffffff',
+    fontSize: 8,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  billTaxGrid: {
+    flexDirection: 'row',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    gap: 16,
+  },
+  billTaxGridCol: {
+    flex: 1,
+  },
+  billTaxMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+  },
+  billTaxMetaKey: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  billTaxMetaVal: {
+    fontSize: 10.5,
+    color: '#475569',
+    fontWeight: '600',
+    textAlign: 'right',
+    flexShrink: 1,
+  },
+  billTaxTable: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  billTaxTableHead: {
+    backgroundColor: '#0d3829',
+    flexDirection: 'row',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  billTaxTh: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  billTaxTableRow: {
+    flexDirection: 'row',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  billTaxTd: {
+    fontSize: 11,
+    color: '#334155',
+  },
+  billTaxBottomRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 14,
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  billTaxReceiptBox: {
+    flex: 1.1,
+    borderWidth: 1.5,
+    borderRadius: 8,
+    padding: 10,
+    backgroundColor: '#fdfdfd',
+  },
+  billTaxReceiptBoxTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  billTaxReceiptBoxLine: {
+    fontSize: 9.5,
+    color: '#475569',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  billTaxSummaryBox: {
+    flex: 1,
+  },
+  billTaxSumLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  billTaxSumKey: {
+    fontSize: 10.5,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  billTaxSumVal: {
+    fontSize: 10.5,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  billTaxTotalBanner: {
+    backgroundColor: '#0d3829',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  billTaxTotalBannerLabel: {
+    color: '#ffffff',
+    fontSize: 11.5,
+    fontWeight: '900',
+  },
+  billTaxTotalBannerVal: {
+    color: '#ffffff',
+    fontSize: 13.5,
+    fontWeight: '900',
   },
   closeBillBtn: {
+    marginHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 6,
     backgroundColor: '#0d3829',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
   },
+  
+  receiptCardWrapper: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '92%',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e4e4e7',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  rcBrandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 8,
+  },
+  rcBrandLogoCol: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rcCircleLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rcBrandVDivider: {
+    width: 1,
+    height: 44,
+    backgroundColor: '#71717a',
+    opacity: 0.6,
+  },
+  rcBrandCenterCol: {
+    flex: 1.2,
+  },
+  rcBrandTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#000000',
+    lineHeight: 18,
+    letterSpacing: 0.5,
+  },
+  rcBrandSlogan: {
+    fontSize: 7,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    color: '#3f3f46',
+    marginTop: 3,
+    lineHeight: 10,
+  },
+  rcBrandRightCol: {
+    flex: 1,
+  },
+  rcBrandPillText: {
+    fontSize: 7,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: '#3f3f46',
+    lineHeight: 11,
+  },
+  rcPillContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  rcPillBanner: {
+    backgroundColor: '#000000',
+    paddingHorizontal: 28,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  rcPillBannerText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 2.5,
+  },
+  rcPillSubtitle: {
+    fontSize: 7.5,
+    fontWeight: '700',
+    letterSpacing: 1.8,
+    color: '#3f3f46',
+    marginTop: 5,
+  },
+  rcMetaSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  rcMetaLeft: {
+    flex: 1.2,
+  },
+  rcMetaRow: {
+    flexDirection: 'row',
+    paddingVertical: 1.5,
+  },
+  rcMetaLabel: {
+    width: 72,
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  rcMetaColon: {
+    width: 12,
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  rcMetaVal: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  rcTableBadgeBox: {
+    width: 95,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+  },
+  rcTableBadgeHeader: {
+    fontSize: 8.5,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: '#000000',
+  },
+  rcTableBadgeMain: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#000000',
+    marginVertical: 1,
+  },
+  rcTableBadgeDivider: {
+    width: '80%',
+    height: 1,
+    backgroundColor: '#000000',
+    marginVertical: 3,
+  },
+  rcTableBadgeFooter: {
+    fontSize: 6,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#3f3f46',
+  },
+  rcDashedDivider: {
+    borderTopWidth: 1.2,
+    borderTopColor: '#71717a',
+    borderStyle: 'dashed',
+    marginVertical: 10,
+    width: '100%',
+  },
+  rcTableHeader: {
+    flexDirection: 'row',
+    borderBottomWidth: 1.2,
+    borderBottomColor: '#000000',
+    paddingBottom: 6,
+    marginBottom: 4,
+  },
+  rcTh: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#000000',
+    letterSpacing: 0.5,
+  },
+  rcTableRow: {
+    flexDirection: 'row',
+    paddingVertical: 3.5,
+    alignItems: 'center',
+  },
+  rcTd: {
+    fontSize: 11.5,
+    color: '#000000',
+  },
+  rcTotalsWrapper: {
+    alignItems: 'flex-end',
+    borderTopWidth: 1.2,
+    borderTopColor: '#000000',
+    paddingTop: 5,
+    marginTop: 4,
+  },
+  rcTotalsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: 170,
+    paddingVertical: 1.5,
+  },
+  rcTotLabel: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  rcTotVal: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  rcTotalsGrandDivider: {
+    width: 170,
+    height: 1.2,
+    backgroundColor: '#000000',
+    marginVertical: 3,
+  },
+  rcDelightSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  rcDelightLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rcDelightText: {
+    fontSize: 7.5,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: '#000000',
+  },
+  rcDelightRight: {
+    alignItems: 'flex-end',
+  },
+  rcScriptThankYou: {
+    fontSize: 20,
+    fontWeight: '800',
+    fontStyle: 'italic',
+    color: '#000000',
+  },
+  rcVisitAgain: {
+    fontSize: 7,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+    color: '#3f3f46',
+    marginTop: 1,
+  },
+  rcFeedbackSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 2,
+  },
+  rcFeedbackVDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: '#71717a',
+    opacity: 0.6,
+  },
+  rcFeedbackMain: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  rcFeedbackSub: {
+    fontSize: 6.5,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: '#52525b',
+    marginTop: 2,
+  },
+  rcBottomBranding: {
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  rcBottomTitle: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    color: '#000000',
+  },
+  rcBottomSub: {
+    fontSize: 7,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    color: '#3f3f46',
+    marginTop: 2,
+  },
+
   closeBillBtnText: {
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  sectionTitleRejected: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#b91c1c',
+  },
+  rejectedSectionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  rejectedSectionBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#dc2626',
+    textTransform: 'uppercase',
+  },
+  rejectedOrderCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#fca5a5',
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#dc2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  rejectedCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  rejectedOrderNumber: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  badgeRejectedSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeRejectedSmallText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  rejectedAmountBox: {
+    alignItems: 'flex-end',
+  },
+  rejectedAmountLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#b91c1c',
+    letterSpacing: 0.5,
+  },
+  rejectedAmountValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#dc2626',
+  },
+  rejectionNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  rejectionNoticeTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#991b1b',
+    marginBottom: 2,
+  },
+  rejectionNoticeDesc: {
+    fontSize: 11,
+    color: '#b91c1c',
+    lineHeight: 15,
+  },
+  rejectedCardActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  reorderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#b91c1c',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  reorderBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  topDurationBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#b91c1c',
+    marginLeft: 6,
+  },
+  dismissToBottomBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  dismissToBottomBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  olderRejectedSectionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  olderRejectedSectionBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+  },
+  sectionTitleMuted: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#64748b',
+  },
+  olderRejectedOrderCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+    marginBottom: 12,
+  },
+  olderRejectedOrderNumber: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  tokenPillMuted: {
+    backgroundColor: '#e2e8f0',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  tokenPillMutedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  badgeRejectedMuted: {
+    backgroundColor: '#cbd5e1',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  badgeRejectedMutedText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  rejectedAmountBoxMuted: {
+    alignItems: 'flex-end',
+  },
+  rejectedAmountLabelMuted: {
+    fontSize: 8.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  rejectedAmountValueMuted: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#64748b',
+  },
+  olderRejectedReasonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  reorderSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e6f4ea',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  reorderSmallBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0d3829',
   },
 });

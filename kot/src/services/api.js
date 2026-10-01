@@ -1,4 +1,16 @@
-export const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const resolveBaseUrl = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:5001';
+    }
+    if (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file://')) {
+      return window.location.origin.replace(/\/admin.*$/, '');
+    }
+  }
+  return 'https://restaurants.stackvil.com';
+};
+
+export const BASE_URL = import.meta.env.VITE_API_URL || resolveBaseUrl();
 
 export const KitchenAPI = {
   // 1. Fetch Orders

@@ -154,22 +154,23 @@ export const App = () => {
     }
   };
 
-  const handleUpdateFoodPrice = async (foodId, newPrice) => {
+  const handleUpdateFoodPrice = async (foodId, priceData) => {
     try {
+      const payload = typeof priceData === 'object' ? priceData : { price: priceData };
       const res = await fetch(`/api/foods/${foodId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price: newPrice }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Price updated to ₹${newPrice}`);
+        showToast('Menu pricing updated successfully');
         await refreshAllData();
       } else {
-        showToast('Failed to update price');
+        showToast(data.message || 'Failed to update price');
       }
     } catch (e) {
-      showToast('Error updating price');
+      showToast('Error updating price: ' + e.message);
     }
   };
 

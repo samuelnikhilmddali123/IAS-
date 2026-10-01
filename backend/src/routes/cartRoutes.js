@@ -391,10 +391,13 @@ router.post('/checkout', userAuth, async (req, res) => {
             });
         }
 
-        const isPreOrder = req.body.orderType === 'PRE_ORDER' || Boolean(req.body.pickupTime);
-        const orderType = isPreOrder ? 'PRE_ORDER' : 'INSTANT';
-        const pickupTime = req.body.pickupTime || null;
+        const isPreOrder = req.body.orderType === 'PRE_ORDER' || Boolean(req.body.pickupTime) || Boolean(req.body.isPreOrder) || Boolean(req.body.slotId);
+        const orderType = isPreOrder ? 'PRE_ORDER' : (req.body.orderType || 'INSTANT');
+        const pickupTime = req.body.pickupTime || req.body.preOrderSlot || (req.body.slot && req.body.slot.label) || null;
         const pickupDate = req.body.pickupDate || (pickupTime ? new Date() : null);
+        const slotId = req.body.slotId || (req.body.slot && req.body.slot.id) || null;
+        const preOrderSlot = req.body.preOrderSlot || pickupTime || (req.body.slot && req.body.slot.label) || null;
+        const mealSlot = req.body.mealSlot || (req.body.slot && req.body.slot.mealSlot) || 'General';
 
         // Requirement 16: Mobile number must come from authenticated User database record
         const registeredMobile = user.phone || user.mobile || '';
@@ -407,10 +410,14 @@ router.post('/checkout', userAuth, async (req, res) => {
             subtotal: validated.subtotal,
             totalAmount: validated.totalAmount,
             orderType,
+            isPreOrder,
             pickupDate,
             pickupTime,
+            slotId,
+            preOrderSlot,
+            mealSlot,
             orderNote: (req.body.orderNote || '').trim(),
-            paymentMethod: 'restaurant_qr',
+            paymentMethod: req.body.paymentMethod || 'restaurant_qr',
             paymentStatus: 'UNPAID'
         };
 
@@ -477,10 +484,13 @@ router.post('/generate-bill', userAuth, async (req, res) => {
             });
         }
 
-        const isPreOrder = req.body.orderType === 'PRE_ORDER' || Boolean(req.body.pickupTime);
-        const orderType = isPreOrder ? 'PRE_ORDER' : 'INSTANT';
-        const pickupTime = req.body.pickupTime || null;
+        const isPreOrder = req.body.orderType === 'PRE_ORDER' || Boolean(req.body.pickupTime) || Boolean(req.body.isPreOrder) || Boolean(req.body.slotId);
+        const orderType = isPreOrder ? 'PRE_ORDER' : (req.body.orderType || 'INSTANT');
+        const pickupTime = req.body.pickupTime || req.body.preOrderSlot || (req.body.slot && req.body.slot.label) || null;
         const pickupDate = req.body.pickupDate || (pickupTime ? new Date() : null);
+        const slotId = req.body.slotId || (req.body.slot && req.body.slot.id) || null;
+        const preOrderSlot = req.body.preOrderSlot || pickupTime || (req.body.slot && req.body.slot.label) || null;
+        const mealSlot = req.body.mealSlot || (req.body.slot && req.body.slot.mealSlot) || 'General';
 
         const orderPayload = {
             userId: String(user.id || user._id),
@@ -490,10 +500,14 @@ router.post('/generate-bill', userAuth, async (req, res) => {
             subtotal: validated.subtotal,
             totalAmount: validated.totalAmount,
             orderType,
+            isPreOrder,
             pickupDate,
             pickupTime,
+            slotId,
+            preOrderSlot,
+            mealSlot,
             orderNote: (req.body.orderNote || '').trim(),
-            paymentMethod: 'restaurant_qr',
+            paymentMethod: req.body.paymentMethod || 'restaurant_qr',
             paymentStatus: 'UNPAID'
         };
 
@@ -524,7 +538,8 @@ router.post('/generate-bill', userAuth, async (req, res) => {
         const sendResult = await whatsappService.sendBillMessage({
             to: registeredMobile,
             billText,
-            qrDataUrl
+            qrDataUrl,
+            billData: bill
         });
 
         // Requirement 17: If delivery fails, do not tell user bill sent successfully, do not clear cart, do not log out

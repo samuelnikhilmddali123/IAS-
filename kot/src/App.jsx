@@ -11,7 +11,7 @@ import { KitchenAPI } from './services/api';
 import { getSocket } from './services/socket';
 import { normalizeOrder } from './utils/orderAdapter';
 import { playKitchenChime } from './utils/audio';
-import { printKOTTicket } from './utils/printer';
+import { printKOTTicket, printPaymentBill } from './utils/printer';
 
 export function App() {
   const getInitialTab = () => {
@@ -31,6 +31,7 @@ export function App() {
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const [orders, setOrders] = useState({
+    new: [],
     prep: [],
     ready: [],
     completed: [],
@@ -96,6 +97,7 @@ export function App() {
         const bucketCancelled = normalizedList.filter(o => o.status === 'cancelled');
 
         setOrders({
+          new: bucketNew,
           prep: bucketPrep,
           ready: bucketReady,
           completed: bucketCompleted,
@@ -132,8 +134,53 @@ export function App() {
       }
     } catch (err) {
       console.error('fetchOrdersAndStats error:', err);
-    } finally {
-      setIsLoading(false);
+    }
+  }, []);
+
+  const recentlyPrintedRef = React.useRef(new Set());
+
+  const autoPrintPaidBill = useCallback((orderOrId) => {
+    const rawId = typeof orderOrId === 'object'
+      ? (orderOrId.orderNumber || orderOrId.id || orderOrId._id || orderOrId.orderId)
+      : orderOrId;
+    if (!rawId) return;
+    const cleanId = String(rawId).trim();
+    const key = `paid_${cleanId}`;
+    if (recentlyPrintedRef.current.has(key)) {
+      console.log('🛡️ [KOT POS] Duplicate payment print suppressed for:', cleanId);
+      return;
+    }
+    recentlyPrintedRef.current.add(key);
+    setTimeout(() => recentlyPrintedRef.current.delete(key), 60000);
+
+    console.log('🖨️ [KOT POS] Auto-printing Official Payment Bill for Order:', cleanId);
+    playKitchenChime();
+    try {
+      printPaymentBill(cleanId);
+    } catch (err) {
+      console.error('Auto print payment bill failed:', err);
+    }
+  }, []);
+
+  const autoPrintKOT = useCallback((kotOrId) => {
+    const rawId = typeof kotOrId === 'object'
+      ? (kotOrId.orderNumber || kotOrId.id || kotOrId._id || kotOrId.orderId)
+      : kotOrId;
+    if (!rawId) return;
+    const cleanId = String(rawId).trim();
+    const key = `kot_${cleanId}`;
+    if (recentlyPrintedRef.current.has(key)) {
+      console.log('🛡️ [KOT POS] Duplicate KOT print suppressed for:', cleanId);
+      return;
+    }
+    recentlyPrintedRef.current.add(key);
+    setTimeout(() => recentlyPrintedRef.current.delete(key), 60000);
+
+    console.log('🖨️ [KOT POS] Auto-printing KOT Ticket for Order:', cleanId);
+    try {
+      printKOTTicket(cleanId);
+    } catch (err) {
+      console.error('Auto print KOT ticket failed:', err);
     }
   }, []);
 
@@ -152,7 +199,7 @@ export function App() {
       setIsConnected(false);
     };
 
-    // 1. Listen for immediate Kitchen Order Tickets (KOT)
+    // 1. Listen for immediate Kitchen Order Tickets (KOT) on checkout (once only)
     const handleNewKOT = (kot) => {
       console.log('⚡ Incoming KOT Ticket via Socket:', kot);
       playKitchenChime();
@@ -167,8 +214,11 @@ export function App() {
 
       setOrders((prev) => ({
         ...prev,
-        prep: [normalized, ...prev.prep]
+        new: [normalized, ...(prev.new || [])]
       }));
+
+      // Single Auto-print KOT on checkout
+      autoPrintKOT(normalized.orderNumber || normalized._id || normalized.id);
 
       const displayToken = normalized.tokenNumber ? `Token #${normalized.tokenNumber}` : normalized.orderNumber;
       setAlerts((prev) => [
@@ -184,9 +234,17 @@ export function App() {
       ]);
     };
 
-    // 2. Listen for order status transitions from backend
+    // 2. Listen for order status transitions from backend (state refresh only)
     const handleOrderStatusUpdated = (updatedOrder) => {
-      console.log('🔄 Order status updated via Socket:', updatedOrder.orderNumber, updatedOrder.status);
+      console.log('🔄 Order status updated via Socket:', updatedOrder.orderNumber, updatedOrder.status, updatedOrder.paymentStatus);
+      fetchOrdersAndStats();
+    };
+
+    // 3. Listen for dedicated payment success print event (once only)
+    const handlePaidBillEvent = (payload) => {
+      console.log('🖨️ Single Payment Success print event received:', payload);
+      const targetId = payload?.orderNumber || payload?.orderId || payload?.id || payload?._id || payload;
+      autoPrintPaidBill(targetId);
       fetchOrdersAndStats();
     };
 
@@ -194,6 +252,7 @@ export function App() {
     socket.on('disconnect', handleDisconnect);
     socket.on('newKOT', handleNewKOT);
     socket.on('orderStatusUpdated', handleOrderStatusUpdated);
+    socket.on('printPaidBill', handlePaidBillEvent);
 
     if (socket.connected) {
       setIsConnected(true);
@@ -209,9 +268,10 @@ export function App() {
       socket.off('disconnect', handleDisconnect);
       socket.off('newKOT', handleNewKOT);
       socket.off('orderStatusUpdated', handleOrderStatusUpdated);
+      socket.off('printPaidBill', handlePaidBillEvent);
       clearInterval(interval);
     };
-  }, [fetchOrdersAndStats]);
+  }, [fetchOrdersAndStats, autoPrintKOT, autoPrintPaidBill]);
 
   // Dynamic counts for MetricsRow & Sidebar
   const newCount = orders.new?.length || 0;
@@ -219,17 +279,58 @@ export function App() {
   const readyCount = orders.ready?.length || 0;
   const completedCount = stats?.todayOrdersCount || (orders.completed?.length || 0) + (completedOrders.length || 0);
   const cancelledCount = orders.cancelled?.length || 0;
-  const totalCount = stats?.totalOrdersCount || (prepCount + readyCount + completedCount + cancelledCount);
+  const totalCount = stats?.totalOrdersCount || (newCount + prepCount + readyCount + completedCount + cancelledCount);
 
-  // Removed handleAcceptOrder since orders go straight to prep
+  // Handler: Start Prep (Moves New -> Preparing Food via backend)
+  const handleStartPrep = async (orderId) => {
+    const target = (orders.new || []).find((o) => o.id === orderId || o._id === orderId) ||
+                   (orders.prep || []).find((o) => o.id === orderId || o._id === orderId);
+    if (!target) return;
 
-  // Handler: Reject / Cancel Order
-  const handleRejectOrder = async (orderId) => {
-    const target = orders.prep.find((o) => o.id === orderId || o._id === orderId);
-    const updatedPrep = orders.prep.filter((o) => o.id !== orderId && o._id !== orderId);
+    const updatedNew = (orders.new || []).filter((o) => o.id !== orderId && o._id !== orderId);
+    const newPrepItem = {
+      ...target,
+      status: 'prep',
+      rawKitchenStatus: 'PREPARING',
+      startedTimeAgo: 'Started just now'
+    };
 
     setOrders({
       ...orders,
+      new: updatedNew,
+      prep: [newPrepItem, ...(orders.prep || []).filter((o) => o.id !== orderId && o._id !== orderId)]
+    });
+
+    const displayId = target.tokenNumber ? `Token #${target.tokenNumber}` : target.orderNumber || `#${orderId}`;
+    setAlerts((prev) => [
+      {
+        id: Date.now(),
+        type: 'prep',
+        title: `${displayId} is now Preparing Food`,
+        time: 'Just now',
+        dot: 'orange'
+      },
+      ...prev
+    ]);
+
+    try {
+      await KitchenAPI.updateOrderStatus(target._id || target.id, 'PREPARING');
+      fetchOrdersAndStats();
+    } catch (err) {
+      console.error(`Failed to mark order ${orderId} preparing on backend:`, err);
+    }
+  };
+
+  // Handler: Reject / Cancel Order
+  const handleRejectOrder = async (orderId) => {
+    const target = (orders.new || []).find((o) => o.id === orderId || o._id === orderId) ||
+                   (orders.prep || []).find((o) => o.id === orderId || o._id === orderId);
+    const updatedNew = (orders.new || []).filter((o) => o.id !== orderId && o._id !== orderId);
+    const updatedPrep = (orders.prep || []).filter((o) => o.id !== orderId && o._id !== orderId);
+
+    setOrders({
+      ...orders,
+      new: updatedNew,
       prep: updatedPrep,
       cancelled: target ? [{ ...target, status: 'cancelled' }, ...orders.cancelled] : orders.cancelled
     });
@@ -256,10 +357,12 @@ export function App() {
 
   // Handler: Mark as Ready (Moves Prep -> Ready via backend)
   const handleMarkReady = async (orderId) => {
-    const target = orders.prep.find((o) => o.id === orderId || o._id === orderId);
+    const target = (orders.prep || []).find((o) => o.id === orderId || o._id === orderId) ||
+                   (orders.new || []).find((o) => o.id === orderId || o._id === orderId);
     if (!target) return;
 
-    const updatedPrep = orders.prep.filter((o) => o.id !== orderId && o._id !== orderId);
+    const updatedNew = (orders.new || []).filter((o) => o.id !== orderId && o._id !== orderId);
+    const updatedPrep = (orders.prep || []).filter((o) => o.id !== orderId && o._id !== orderId);
     const newReadyItem = {
       ...target,
       status: 'ready',
@@ -270,8 +373,9 @@ export function App() {
 
     setOrders({
       ...orders,
+      new: updatedNew,
       prep: updatedPrep,
-      ready: [newReadyItem, ...orders.ready]
+      ready: [newReadyItem, ...(orders.ready || [])]
     });
 
     const displayId = target.tokenNumber ? `Token #${target.tokenNumber}` : target.orderNumber || `#${orderId}`;
@@ -380,7 +484,7 @@ export function App() {
         orderNote: newOrder.note || ''
       };
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/orders`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || window.location.origin}/api/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -399,7 +503,7 @@ export function App() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        newOrdersCount={0}
+        newOrdersCount={newCount}
       />
 
       {/* Main Content Area */}
@@ -412,7 +516,7 @@ export function App() {
           {/* Top Metrics Row connected to live API counts */}
           <MetricsRow
             counts={{
-              newCount: 0,
+              newCount,
               prepCount,
               readyCount,
               completedCount,
@@ -431,6 +535,7 @@ export function App() {
               setSearchTerm={setSearchTerm}
               filterType={filterType}
               setFilterType={setFilterType}
+              onStartPrep={handleStartPrep}
               onRejectOrder={handleRejectOrder}
               onMarkReady={handleMarkReady}
               onMarkCompleted={handleMarkCompleted}
@@ -442,6 +547,7 @@ export function App() {
               orders={orders}
               completedOrders={completedOrders}
               stats={stats}
+              onStartPrep={handleStartPrep}
               onRejectOrder={handleRejectOrder}
               onMarkReady={handleMarkReady}
               onMarkCompleted={handleMarkCompleted}
@@ -465,3 +571,4 @@ export function App() {
 }
 
 export default App;
+

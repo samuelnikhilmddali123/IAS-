@@ -11,6 +11,21 @@ const {
 } = require('../services/foodService');
 
 const router = express.Router();
+const { getPrebookSlots } = require('../services/slotService');
+
+// Public: Get prebooking time slots
+router.get('/slots', async (req, res) => {
+  try {
+    const { date, mealType } = req.query;
+    const result = await getPrebookSlots({ date, mealType });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch prebooking slots'
+    });
+  }
+});
 
 // Public: Get menu foods (supports ?category=breakfast|lunch|dinner|snacks, ?isVeg=true, ?search=...)
 router.get('/', async (req, res) => {

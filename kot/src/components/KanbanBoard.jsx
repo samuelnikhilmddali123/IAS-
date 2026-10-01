@@ -19,6 +19,7 @@ export function KanbanBoard({
   setSearchTerm,
   filterType,
   setFilterType,
+  onStartPrep,
   onAcceptOrder,
   onRejectOrder,
   onMarkReady,
@@ -35,17 +36,17 @@ export function KanbanBoard({
       // Search term filter
       if (searchTerm.trim() !== '') {
         const query = searchTerm.toLowerCase();
-        const matchesId = order.id.toLowerCase().includes(query);
+        const matchesId = (order.id || '').toLowerCase().includes(query) || (order.orderNumber || '').toLowerCase().includes(query);
         const matchesTable = order.table ? order.table.toLowerCase().includes(query) : false;
-        const matchesItem = order.items.some((i) => i.name.toLowerCase().includes(query));
+        const matchesItem = (order.items || []).some((i) => (i.name || '').toLowerCase().includes(query));
         return matchesId || matchesTable || matchesItem;
       }
       return true;
     });
   };
 
-
-  const prepFiltered = filterOrders(orders.prep || []);
+  const allPrepList = [...(orders.new || []), ...(orders.prep || [])];
+  const prepFiltered = filterOrders(allPrepList);
   const readyFiltered = filterOrders(orders.ready || []);
 
   return (
@@ -105,7 +106,7 @@ export function KanbanBoard({
               </div>
               <div className="column-title-group">
                 <div className="column-title">
-                  Preparing
+                  Preparing Food
                   <span className="column-badge">{prepFiltered.length}</span>
                 </div>
                 <span className="column-subtitle">In progress</span>
@@ -121,8 +122,10 @@ export function KanbanBoard({
             ) : (
               prepFiltered.map((order) => (
                 <OrderCard
-                  key={order.id}
+                  key={order.id || order.orderNumber}
                   order={order}
+                  onStartPrep={onStartPrep || onAcceptOrder}
+                  onAccept={onStartPrep || onAcceptOrder}
                   onMarkReady={onMarkReady}
                   onReject={onRejectOrder}
                 />

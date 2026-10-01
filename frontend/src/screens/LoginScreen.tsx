@@ -20,76 +20,11 @@ import Svg, { Path } from 'react-native-svg';
 import jsQR from 'jsqr';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { AppIcon } from '../components/AppIcon';
-import { useCanteen, fetchWithFallback } from '../context/CanteenContext';
+import { useCanteen, fetchWithFallback, getApiBase } from '../context/CanteenContext';
+import { getDisplayImageUrl } from '../utils/imageUtils';
 
-const BACKGROUND_IMG = require('../../assets/BG.png');
+const BACKGROUND_IMG = require('../../assets/Tab Backgroun.png');
 const EMBLEM_IMG = require('../../assets/6a72e4e7-5e3f-43cb-bd57-bac2a1fcb7f4.png');
-
-const SERPAPI_KEY = '2d8c514adc81802ac3aeb0339ae905060021acc30a101f2177316f2bae88e950';
-
-interface OfficerPhotoItem {
-  id: string;
-  name: string;
-  role: string;
-  img: string;
-}
-
-const DEFAULT_SUGGESTED_OFFICERS: OfficerPhotoItem[] = [
-  {
-    id: '1',
-    name: 'Smita Sabharwal',
-    role: '(IAS)',
-    img: 'https://ts4.mm.bing.net/th?id=OIP.SIM9STETOVZc4cn6jEF4BgHaEc&pid=15.1',
-  },
-  {
-    id: '2',
-    name: 'Tina Dabi',
-    role: '(IAS)',
-    img: 'https://ts4.mm.bing.net/th?id=OIP.Ux2okdnRi4pJa08yMeYZLQHaEK&pid=15.1',
-  },
-  {
-    id: '3',
-    name: 'T.V. Somanathan',
-    role: '(IAS)',
-    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/T._V._Somanathan.jpg/500px-T._V._Somanathan.jpg',
-  },
-  {
-    id: '4',
-    name: 'Dr. Vivek Agnihotri',
-    role: '(IAS)',
-    img: 'https://ts3.mm.bing.net/th?id=OIP.NLtv5k9i-RD2JpCfDZ6pSAAAAA&pid=15.1',
-  },
-  {
-    id: '5',
-    name: 'Arvind Kumar',
-    role: '(IAS)',
-    img: 'https://ts1.mm.bing.net/th?id=OIP.bYqP963s9Jg7vP3yYhL6XwHaEK&pid=15.1',
-  },
-  {
-    id: '6',
-    name: 'Durga Shakti Nagpal',
-    role: '(IAS)',
-    img: 'https://ts3.mm.bing.net/th?id=OIP.qWdoZX1Ugfyx8KzpfwRiMAHaEK&pid=15.1',
-  },
-  {
-    id: '7',
-    name: 'Awanish Sharan',
-    role: '(IAS)',
-    img: 'https://ts3.mm.bing.net/th?id=OIP.2On8XPbGsWEK5TiHLUrk_gHaE_&pid=15.1',
-  },
-  {
-    id: '8',
-    name: 'Suhas L.Y.',
-    role: '(IAS)',
-    img: 'https://ts2.mm.bing.net/th?id=OIP.ur3Rbvx1NTrEkFkfmtMkPAHaEK&pid=15.1',
-  },
-  {
-    id: '9',
-    name: 'Srinivas Katikithala',
-    role: '(IAS)',
-    img: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQpIVryRt0bhJwXFG2pX-iK_SWfHLKG8rCFgX9O7vuEVQ&s=10',
-  },
-];
 
 export const LoginScreen: React.FC = () => {
   const { width, height } = useWindowDimensions();
@@ -189,6 +124,15 @@ export const LoginScreen: React.FC = () => {
         if (!expTime || now >= expTime) return false; // 1 hr completed -> hide profile!
 
         s.expiresAt = expTime;
+        if (dbUser.avatar && dbUser.avatar.trim()) {
+          s.avatar = dbUser.avatar;
+        }
+        if (dbUser.name) {
+          s.name = dbUser.name;
+        }
+        if (dbUser.designation) {
+          s.designation = dbUser.designation;
+        }
         return true;
       });
 
@@ -223,12 +167,28 @@ export const LoginScreen: React.FC = () => {
 
             if (orders.length > 0) {
               orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-              const active = orders.find((o) =>
-                ['NEW', 'ACCEPTED', 'PENDING', 'PREPARING', 'COOKING', 'ALMOST_READY', 'READY'].includes(o.status)
-              );
+              const active = orders.find((o) => {
+                const st = (o.kitchenStatus || o.status || '').toUpperCase();
+                return ['NEW', 'ACCEPTED', 'PENDING', 'PRE_ORDERED', 'PLACED', 'ORDER_PLACED', 'PREPARING', 'COOKING', 'IN_PROGRESS', 'ALMOST_READY', 'READY'].includes(st);
+              });
               if (active) {
-                s.orderStatus = active.status;
-                if (!s.avatar && active.userAvatar) {
+                const kSt = (active.kitchenStatus || '').toUpperCase();
+                const oSt = (active.status || '').toUpperCase();
+                if (kSt === 'NEW' || kSt === 'ACCEPTED' || oSt === 'NEW' || oSt === 'PENDING' || oSt === 'PRE_ORDERED' || oSt === 'PLACED' || oSt === 'ORDER_PLACED') {
+                  s.orderStatus = 'NEW';
+                } else if (kSt === 'PREPARING' || kSt === 'COOKING' || oSt === 'PREPARING' || oSt === 'COOKING' || oSt === 'IN_PROGRESS') {
+                  s.orderStatus = 'PREPARING';
+                } else if (kSt === 'READY' || kSt === 'ALMOST_READY' || oSt === 'READY' || oSt === 'ALMOST_READY') {
+                  s.orderStatus = 'READY';
+                } else {
+                  s.orderStatus = null;
+                }
+
+                // Fetch user data from order and display it
+                if (active.userName && active.userName.trim() && active.userName !== 'IAS Officer') {
+                  s.name = active.userName;
+                }
+                if (active.userAvatar && active.userAvatar.trim() && !active.userAvatar.includes('photo-1507003211169')) {
                   s.avatar = active.userAvatar;
                 }
               } else {
@@ -246,7 +206,7 @@ export const LoginScreen: React.FC = () => {
 
       setRecentUserSessions(updated);
     } catch (err) {
-      console.warn('Error syncing real-time user sessions:', err);
+      // Graceful ignore during network changes / candidate fallback probing
     }
   }, []);
 
@@ -279,15 +239,13 @@ export const LoginScreen: React.FC = () => {
   // Login Form States
   const [mobile, setMobile] = useState<string>('');
   const [pin, setPin] = useState<string>('');
+  const [isPinFocused, setIsPinFocused] = useState<boolean>(false);
   const [showPin, setShowPin] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Register Form States
   const [regFullName, setRegFullName] = useState<string>('');
-  const [regDesignation, setRegDesignation] = useState<string>('');
-  const [regDepartment, setRegDepartment] = useState<string>('');
-  const [regEmail, setRegEmail] = useState<string>('');
   const [regPhone, setRegPhone] = useState<string>('');
   const [regPinSuffix, setRegPinSuffix] = useState<string>('');
   const [regConfirmPinSuffix, setRegConfirmPinSuffix] = useState<string>('');
@@ -297,15 +255,68 @@ export const LoginScreen: React.FC = () => {
   const regConfirmPin = regPhonePrefix + regConfirmPinSuffix;
   const [showRegPin, setShowRegPin] = useState<boolean>(false);
   const [showRegConfirmPin, setShowRegConfirmPin] = useState<boolean>(false);
+  const [isRegOfficial, setIsRegOfficial] = useState<boolean>(true);
   const [regErrorMsg, setRegErrorMsg] = useState<string>('');
 
-  // Officer Photos State
-  const [officerPhotos, setOfficerPhotos] = useState<OfficerPhotoItem[]>(DEFAULT_SUGGESTED_OFFICERS);
-  const [selectedPhoto, setSelectedPhoto] = useState<string>(
-    DEFAULT_SUGGESTED_OFFICERS[0].img
-  );
+  // Officer Avatar & Photo Search State (Matching 3rd image design)
+  const [selectedPhoto, setSelectedPhoto] = useState<string>('');
+  const [officerPhotos, setOfficerPhotos] = useState<Array<{ id: string; thumbnail: string; original: string; title: string; source: string }>>([]);
   const [isSearchingPhotos, setIsSearchingPhotos] = useState<boolean>(false);
-  const [showMorePhotos, setShowMorePhotos] = useState<boolean>(false);
+  const [photoSearchSource, setPhotoSearchSource] = useState<string>('');
+  const [isExpandedViewMore, setIsExpandedViewMore] = useState<boolean>(false);
+
+  const getDisplayImageUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+    if (url.includes('/api/image-proxy') || url.includes('/image-proxy')) return url;
+    if (
+      url.includes('wikimedia.org') ||
+      url.includes('wikipedia.org') ||
+      url.includes('bing.net') ||
+      url.includes('gstatic.com') ||
+      url.startsWith('http://') ||
+      url.startsWith('https://')
+    ) {
+      const base = getApiBase();
+      const separator = base.endsWith('/') ? '' : '/';
+      return `${base}${separator}api/image-proxy?url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+
+  useEffect(() => {
+    if (authMode !== 'register') return;
+    const query = regFullName.trim();
+
+    setIsSearchingPhotos(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const searchParam = query.length >= 2 ? encodeURIComponent(query) : 'IAS';
+        const res = await fetchWithFallback(`/api/search-officer?name=${searchParam}`, {}, 4000);
+        const data = await res.json().catch(() => ({}));
+        if (data.success && Array.isArray(data.images) && data.images.length > 0) {
+          setOfficerPhotos(data.images);
+          setPhotoSearchSource(data.source || (query.length >= 2 ? 'Official Verified Portraits' : 'Suggested IAS Officers'));
+          setSelectedPhoto((prev) => {
+            const exists = data.images.some((img: any) => (img.thumbnail || img.original) === prev);
+            return exists ? prev : (data.images[0].thumbnail || data.images[0].original);
+          });
+        } else if (query.length >= 2) {
+          setOfficerPhotos([]);
+          setPhotoSearchSource('');
+        }
+      } catch (e) {
+        if (query.length >= 2) {
+          setOfficerPhotos([]);
+          setPhotoSearchSource('');
+        }
+      } finally {
+        setIsSearchingPhotos(false);
+      }
+    }, query.length >= 2 ? 250 : 0);
+
+    return () => clearTimeout(timeout);
+  }, [regFullName, authMode]);
 
   // Modals
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
@@ -321,9 +332,6 @@ export const LoginScreen: React.FC = () => {
   const pinInputRef = useRef<TextInput>(null);
 
   const regFullNameRef = useRef<TextInput>(null);
-  const regDesignationRef = useRef<TextInput>(null);
-  const regDepartmentRef = useRef<TextInput>(null);
-  const regEmailRef = useRef<TextInput>(null);
   const regPhoneRef = useRef<TextInput>(null);
   const regPinRef = useRef<TextInput>(null);
   const regConfirmPinRef = useRef<TextInput>(null);
@@ -577,67 +585,6 @@ export const LoginScreen: React.FC = () => {
     };
   }, [stopLiveCamera]);
 
-  // Search Google/Web Images dynamically when the officer name is entered
-  const fetchOfficerPhotos = useCallback(async (nameQuery: string) => {
-    const trimmed = (nameQuery || '').trim();
-    if (!trimmed) {
-      setOfficerPhotos(DEFAULT_SUGGESTED_OFFICERS);
-      return;
-    }
-
-    if (trimmed.length < 2) {
-      return;
-    }
-
-    setIsSearchingPhotos(true);
-    const enc = encodeURIComponent(trimmed);
-
-    try {
-      const res = await fetchWithFallback(`/search-officer?name=${enc}`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      }, 8000);
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.images) && data.images.length > 0) {
-          const mapped: OfficerPhotoItem[] = data.images.map((item: any, idx: number) => ({
-            id: item.id || `photo-${idx}`,
-            name: item.title ? (item.title.length > 32 ? item.title.slice(0, 32) + '...' : item.title) : `${trimmed} (IAS)`,
-            role: item.source ? `(${item.source.slice(0, 20)})` : '(IAS)',
-            img: item.thumbnail || item.original,
-          }));
-          setOfficerPhotos(mapped);
-          if (mapped[0]?.img) {
-            setSelectedPhoto(mapped[0].img);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Officer search error:', e);
-    } finally {
-      setIsSearchingPhotos(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const trimmed = regFullName.trim();
-    if (!trimmed) {
-      setOfficerPhotos(DEFAULT_SUGGESTED_OFFICERS);
-      return;
-    }
-
-    if (trimmed.length < 2) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      fetchOfficerPhotos(trimmed);
-    }, 400);
-
-    return () => clearTimeout(timer);
-  }, [regFullName, fetchOfficerPhotos]);
-
   const handleLogin = async () => {
     if (!pin.trim()) {
       setErrorMsg('Please enter your password');
@@ -698,13 +645,14 @@ export const LoginScreen: React.FC = () => {
     try {
       const result = await registerUser({
         name: regFullName.trim(),
-        email: regEmail.trim(),
         phone: regPhone.trim(),
         pin: fullFinalPin,
         avatar: selectedPhoto,
-        designation: regDesignation.trim(),
-        location: regDepartment.trim(),
-        department: regDepartment.trim(),
+        designation: '',
+        location: '',
+        department: '',
+        email: '',
+        isOfficial: isRegOfficial,
       });
       if (!result.success) {
         setRegErrorMsg(result.error || 'Registration failed. Backend returned an error.');
@@ -715,8 +663,6 @@ export const LoginScreen: React.FC = () => {
       setIsSubmitting(false);
     }
   };
-
-  const displayedPhotos = showMorePhotos ? officerPhotos : officerPhotos.slice(0, 6);
 
   return (
     <View style={styles.container}>
@@ -733,6 +679,7 @@ export const LoginScreen: React.FC = () => {
           style={styles.scrollView}
           contentContainerStyle={[
             styles.scrollContent,
+            authMode === 'register' && { justifyContent: 'center', paddingTop: 20 },
             { minHeight: height, paddingBottom: isKeyboardOpen ? 240 : 18 },
           ]}
           showsVerticalScrollIndicator={false}
@@ -740,46 +687,48 @@ export const LoginScreen: React.FC = () => {
           keyboardShouldPersistTaps="handled"
           bounces={true}
         >
-          {/* Top Header Row with Government of India Emblem & Slogans */}
-          <View style={styles.headerRow}>
-            {/* Left Slogan */}
-            {isWideScreen ? (
-              <View style={styles.leftSloganCol}>
-                <Text style={styles.sloganText}>Healthy People.</Text>
-                <Text style={styles.sloganText}>Efficient Governance.</Text>
-                <Text style={styles.sloganText}>Stronger India.</Text>
-                <View style={styles.saffronAccentBar} />
-              </View>
-            ) : null}
+          {/* Top Header Row with Government of India Emblem & Slogans (Hidden in Register mode per user request) */}
+          {authMode !== 'register' && (
+            <View style={styles.headerRow}>
+              {/* Left Slogan */}
+              {isWideScreen ? (
+                <View style={styles.leftSloganCol}>
+                  <Text style={styles.sloganText}>Healthy People.</Text>
+                  <Text style={styles.sloganText}>Efficient Governance.</Text>
+                  <Text style={styles.sloganText}>Stronger India.</Text>
+                  <View style={styles.saffronAccentBar} />
+                </View>
+              ) : null}
 
-            {/* Central Emblem & Title */}
-            <View style={styles.centerIdentityCol}>
-              <Image
-                source={EMBLEM_IMG}
-                style={styles.emblemImage}
-                resizeMode="contain"
-                accessibilityLabel="Ashoka Lion Capital - Government of India"
-              />
-              <Text style={styles.govTitle}>Government of India</Text>
-              <Text style={styles.mainTitle}>Canteen Services</Text>
-              <Text style={styles.subtitleTagline}>Good Food. Greater Service.</Text>
-              <View style={styles.headerTricolorBar}>
-                <View style={styles.headerSaffron} />
-                <View style={styles.headerGreen} />
+              {/* Central Emblem & Title */}
+              <View style={styles.centerIdentityCol}>
+                <Image
+                  source={EMBLEM_IMG}
+                  style={styles.emblemImage}
+                  resizeMode="contain"
+                  accessibilityLabel="Ashoka Lion Capital - Government of India"
+                />
+                <Text style={styles.govTitle}>Government of India</Text>
+                <Text style={styles.mainTitle}>Canteen Services</Text>
+                <Text style={styles.subtitleTagline}>Good Food. Greater Service.</Text>
+                <View style={styles.headerTricolorBar}>
+                  <View style={styles.headerSaffron} />
+                  <View style={styles.headerGreen} />
+                </View>
               </View>
+
+              {/* Right Slogan */}
+              {isWideScreen ? (
+                <View style={styles.rightSloganCol}>
+                  <Text style={styles.sloganText}>Nourishing</Text>
+                  <Text style={styles.sloganText}>People.</Text>
+                  <Text style={styles.sloganText}>Enabling</Text>
+                  <Text style={styles.sloganText}>Progress.</Text>
+                  <View style={styles.greenAccentBar} />
+                </View>
+              ) : null}
             </View>
-
-            {/* Right Slogan */}
-            {isWideScreen ? (
-              <View style={styles.rightSloganCol}>
-                <Text style={styles.sloganText}>Nourishing</Text>
-                <Text style={styles.sloganText}>People.</Text>
-                <Text style={styles.sloganText}>Enabling</Text>
-                <Text style={styles.sloganText}>Progress.</Text>
-                <View style={styles.greenAccentBar} />
-              </View>
-            ) : null}
-          </View>
+          )}
 
           {/* ==================== QR SCANNER MODE ==================== */}
           {authMode === 'qr' ? (
@@ -981,48 +930,62 @@ export const LoginScreen: React.FC = () => {
                   </View>
                 ) : null}
 
-                {/* Password Input Only (Requirement 13) */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>PIN</Text>
+                {/* 6-Digit PIN Enter Boxes */}
+                <View style={styles.pinBoxesGroup}>
+                  <Text style={styles.pinGroupLabel}>PIN</Text>
+
                   <TouchableOpacity
-                    style={styles.inputContainer}
+                    style={styles.pinBoxesRow}
                     activeOpacity={1}
                     onPress={() => pinInputRef.current?.focus()}
                   >
-                    <AppIcon name="lock-closed-outline" size={17} color="#4b5563" />
+                    {[0, 1, 2, 3, 4, 5].map((index) => {
+                      const isFilled = pin.length > index;
+                      const isFocused = isPinFocused && (pin.length === index || (pin.length === 6 && index === 5));
+                      return (
+                        <View
+                          key={index}
+                          style={[
+                            styles.pinBox,
+                            isFilled && styles.pinBoxFilled,
+                            isFocused && styles.pinBoxFocused,
+                          ]}
+                        >
+                          {isFilled ? (
+                            <View style={styles.pinBlackDot} />
+                          ) : null}
+                        </View>
+                      );
+                    })}
+
                     <TextInput
                       ref={pinInputRef}
-                      style={styles.textInput}
-                      placeholder="Enter 6-digit PIN"
-                      placeholderTextColor="#9ca3af"
-                      autoCapitalize="none"
-                      disableFullscreenUI={true}
-                      secureTextEntry={!showPin}
+                      style={styles.hiddenPinInput}
+                      keyboardType="numeric"
+                      maxLength={6}
                       value={pin}
                       onChangeText={(val) => {
-                        setPin(val);
+                        const clean = val.replace(/\D/g, '').slice(0, 6);
+                        setPin(clean);
                         if (errorMsg) setErrorMsg('');
+                      }}
+                      onFocus={() => {
+                        setIsPinFocused(true);
+                        handleFocusField(0);
+                      }}
+                      onBlur={() => {
+                        setIsPinFocused(false);
+                        handleFieldBlur();
                       }}
                       returnKeyType="done"
                       onSubmitEditing={handleLogin}
-                      onFocus={() => handleFocusField(0)}
-                      onBlur={handleFieldBlur}
+                      autoFocus={false}
+                      disableFullscreenUI={true}
                     />
-                    <TouchableOpacity
-                      onPress={() => setShowPin(!showPin)}
-                      style={styles.eyeBtn}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <AppIcon
-                        name={showPin ? 'eye-off-outline' : 'eye-outline'}
-                        size={18}
-                        color="#6b7280"
-                      />
-                    </TouchableOpacity>
                   </TouchableOpacity>
-                  <Text style={styles.pinHelperText}>
-                    Enter the last 2 digits of your mobile number and 4 digits.
+
+                  <Text style={styles.pinBoxHelperText}>
+                    Enter the last 2 digits of your mobile number and any 4 digits.
                   </Text>
                 </View>
 
@@ -1036,10 +999,7 @@ export const LoginScreen: React.FC = () => {
                   {isSubmitting ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={styles.primaryActionButtonText}>Login</Text>
-                      <AppIcon name="arrow-forward" size={17} color="#ffffff" style={{ marginLeft: 8 }} />
-                    </View>
+                    <Text style={styles.primaryActionButtonText}>Login  →</Text>
                   )}
                 </TouchableOpacity>
 
@@ -1081,9 +1041,9 @@ export const LoginScreen: React.FC = () => {
                   }}
                   activeOpacity={0.8}
                 >
-                  <AppIcon name="person-add-outline" size={20} color="#0a3d31" />
+                  <AppIcon name="person-add-outline" size={20} color="#0f172a" />
                   <Text style={styles.newUserTitle}>New User? Create Account</Text>
-                  <AppIcon name="chevron-forward" size={18} color="#0a3d31" />
+                  <AppIcon name="chevron-forward" size={18} color="#0f172a" />
                 </TouchableOpacity>
 
                 {/* Need Help Link */}
@@ -1124,27 +1084,30 @@ export const LoginScreen: React.FC = () => {
                     scrollEventThrottle={16}
                   >
                     {recentUserSessions.map((session, idx) => {
-                      let statusText = 'No active order';
-                      let dotColor = '#10b981';
+                      let statusText = 'No active orders';
+                      let dotColor = '#94a3b8';
 
-                      if (session.orderStatus === 'READY') {
-                        statusText = 'Dish is ready!';
+                      const rawStatus = (session.orderStatus || '').toUpperCase();
+                      if (rawStatus === 'READY' || rawStatus === 'ALMOST_READY') {
+                        statusText = 'Ready';
                         dotColor = '#10b981';
-                      } else if (session.orderStatus === 'ALMOST_READY') {
-                        statusText = 'Almost ready';
-                        dotColor = '#0284c7';
-                      } else if (session.orderStatus === 'COOKING' || session.orderStatus === 'ACCEPTED') {
-                        statusText = 'Cooking...';
+                      } else if (rawStatus === 'PREPARING' || rawStatus === 'COOKING' || rawStatus === 'IN_PROGRESS') {
+                        statusText = 'Preparing Food';
                         dotColor = '#f59e0b';
-                      } else if (session.orderStatus === 'PREPARING' || session.orderStatus === 'NEW' || session.orderStatus === 'PENDING') {
-                        statusText = 'Preparing food';
+                      } else if (rawStatus === 'NEW' || rawStatus === 'PENDING' || rawStatus === 'PRE_ORDERED' || rawStatus === 'PLACED' || rawStatus === 'ORDER_PLACED' || rawStatus === 'ACCEPTED') {
+                        statusText = 'Order Placed';
                         dotColor = '#10b981';
                       } else {
-                        statusText = 'No active order';
-                        dotColor = '#10b981';
+                        statusText = 'No active orders';
+                        dotColor = '#94a3b8';
                       }
 
-                      const avatarUri = session.avatar || 'https://ts3.mm.bing.net/th?id=OIP.ffM33cELiUO4Z0b09vcH0gHaEw&pid=15.1';
+                      const rawAvatar = session.avatar || '';
+                      const proxiedAvatar = getDisplayImageUrl(rawAvatar);
+                      const hasAvatar = Boolean(
+                        proxiedAvatar &&
+                        !proxiedAvatar.includes('photo-1507003211169')
+                      );
 
                       return (
                         <TouchableOpacity
@@ -1160,7 +1123,11 @@ export const LoginScreen: React.FC = () => {
 
                           {/* Right: Circular Profile Avatar with Status Dot */}
                           <View style={styles.foodStatusAvatarWrapper}>
-                            <Image source={{ uri: avatarUri }} style={styles.foodStatusAvatar} />
+                            <Image
+                              source={hasAvatar ? { uri: proxiedAvatar } : EMBLEM_IMG}
+                              style={styles.foodStatusAvatar}
+                              resizeMode={hasAvatar ? 'cover' : 'contain'}
+                            />
                             <View style={[styles.foodStatusDot, { backgroundColor: dotColor }]} />
                           </View>
                         </TouchableOpacity>
@@ -1222,87 +1189,13 @@ export const LoginScreen: React.FC = () => {
                       autoCorrect={false}
                       disableFullscreenUI={true}
                       returnKeyType="next"
-                      onSubmitEditing={() => regDesignationRef.current?.focus()}
+                      onSubmitEditing={() => regPhoneRef.current?.focus()}
                       onFocus={() => handleFocusField(0)}
                       onBlur={handleFieldBlur}
                     />
                   </TouchableOpacity>
 
-                  {/* 2. Designation */}
-                  <TouchableOpacity
-                    style={styles.inputContainerCompact}
-                    activeOpacity={1}
-                    onPress={() => regDesignationRef.current?.focus()}
-                  >
-                    <AppIcon name="briefcase-outline" size={17} color="#4b5563" />
-                    <TextInput
-                      ref={regDesignationRef}
-                      style={styles.textInput}
-                      placeholder="Designation"
-                      placeholderTextColor="#9ca3af"
-                      value={regDesignation}
-                      onChangeText={setRegDesignation}
-                      autoCapitalize="words"
-                      disableFullscreenUI={true}
-                      returnKeyType="next"
-                      onSubmitEditing={() => regDepartmentRef.current?.focus()}
-                      onFocus={() => handleFocusField(1)}
-                      onBlur={handleFieldBlur}
-                    />
-                  </TouchableOpacity>
-
-                  {/* 3. Location/Department */}
-                  <TouchableOpacity
-                    style={styles.inputContainerCompact}
-                    activeOpacity={1}
-                    onPress={() => regDepartmentRef.current?.focus()}
-                  >
-                    <AppIcon name="business-outline" size={17} color="#4b5563" />
-                    <TextInput
-                      ref={regDepartmentRef}
-                      style={styles.textInput}
-                      placeholder="Location"
-                      placeholderTextColor="#9ca3af"
-                      value={regDepartment}
-                      onChangeText={setRegDepartment}
-                      autoCapitalize="words"
-                      disableFullscreenUI={true}
-                      returnKeyType="next"
-                      onSubmitEditing={() => regEmailRef.current?.focus()}
-                      onFocus={() => handleFocusField(2)}
-                      onBlur={handleFieldBlur}
-                    />
-                  </TouchableOpacity>
-
-                  {/* 4. Email Address */}
-                  <TouchableOpacity
-                    style={styles.inputContainerCompact}
-                    activeOpacity={1}
-                    onPress={() => regEmailRef.current?.focus()}
-                  >
-                    <AppIcon name="mail-outline" size={17} color="#4b5563" />
-                    <TextInput
-                      ref={regEmailRef}
-                      style={styles.textInput}
-                      placeholder="Email Address"
-                      placeholderTextColor="#9ca3af"
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      disableFullscreenUI={true}
-                      value={regEmail}
-                      onChangeText={(val) => {
-                        setRegEmail(val);
-                        if (regErrorMsg) setRegErrorMsg('');
-                      }}
-                      returnKeyType="next"
-                      onSubmitEditing={() => regPhoneRef.current?.focus()}
-                      onFocus={() => handleFocusField(3)}
-                      onBlur={handleFieldBlur}
-                    />
-                  </TouchableOpacity>
-
-                  {/* 5. Phone Number */}
+                  {/* 2. Phone Number */}
                   <TouchableOpacity
                     style={styles.inputContainerCompact}
                     activeOpacity={1}
@@ -1324,7 +1217,7 @@ export const LoginScreen: React.FC = () => {
                       maxLength={15}
                       returnKeyType="next"
                       onSubmitEditing={() => regPinRef.current?.focus()}
-                      onFocus={() => handleFocusField(4)}
+                      onFocus={() => handleFocusField(1)}
                       onBlur={handleFieldBlur}
                     />
                   </TouchableOpacity>
@@ -1358,7 +1251,7 @@ export const LoginScreen: React.FC = () => {
                       maxLength={4}
                       returnKeyType="next"
                       onSubmitEditing={() => regConfirmPinRef.current?.focus()}
-                      onFocus={() => handleFocusField(5)}
+                      onFocus={() => handleFocusField(2)}
                       onBlur={handleFieldBlur}
                     />
                     <TouchableOpacity
@@ -1404,7 +1297,7 @@ export const LoginScreen: React.FC = () => {
                       maxLength={4}
                       returnKeyType="done"
                       onSubmitEditing={handleRegister}
-                      onFocus={() => handleFocusField(6)}
+                      onFocus={() => handleFocusField(3)}
                       onBlur={handleFieldBlur}
                     />
                     <TouchableOpacity
@@ -1420,6 +1313,52 @@ export const LoginScreen: React.FC = () => {
                       />
                     </TouchableOpacity>
                   </TouchableOpacity>
+
+                  {/* Account Type Selector: Official / Verified Officer vs General User */}
+                  <View style={styles.officialSelectorRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.accountTypeChip,
+                        isRegOfficial && styles.accountTypeChipActive
+                      ]}
+                      onPress={() => setIsRegOfficial(true)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.radioCircle, isRegOfficial && styles.radioCircleActive]}>
+                        {isRegOfficial && <View style={styles.radioInnerDot} />}
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={[styles.accountTypeTitle, isRegOfficial && styles.accountTypeTitleActive]}>
+                            Official User
+                          </Text>
+                          <View style={styles.verifiedTickMini}>
+                            <AppIcon name="checkmark" size={9} color="#ffffff" />
+                          </View>
+                        </View>
+                        <Text style={styles.accountTypeSubtitle}>Official & Special Price ✓</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.accountTypeChip,
+                        !isRegOfficial && styles.accountTypeChipActive
+                      ]}
+                      onPress={() => setIsRegOfficial(false)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.radioCircle, !isRegOfficial && styles.radioCircleActive]}>
+                        {!isRegOfficial && <View style={styles.radioInnerDot} />}
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={[styles.accountTypeTitle, !isRegOfficial && styles.accountTypeTitleActive]}>
+                          General User
+                        </Text>
+                        <Text style={styles.accountTypeSubtitle}>Standard General Price</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
 
                   {/* WhatsApp QR Dispatch Notice */}
                   <View style={styles.waDispatchNotice}>
@@ -1463,123 +1402,88 @@ export const LoginScreen: React.FC = () => {
                   </Text>
                 </View>
 
-                {/* Right Side / Responsive: Dynamic Photos or Ashoka Emblem */}
-                {isWideScreen || regFullName.trim() ? (
-                  <View style={[styles.registerRightCol, !isWideScreen && styles.registerRightColStacked]}>
-                    {/* When Full Name is entered -> Emblem disappears and Photos appear! */}
-                    {regFullName.trim() ? (
-                      <View style={styles.photoPickerContainer}>
-                        {/* Header */}
-                        <View style={styles.choosePhotoHeader}>
-                          <View style={styles.choosePhotoHeaderRow}>
-                            <Text style={styles.choosePhotoTitle}>Choose Your Profile Photo</Text>
+                {/* Right Side: Choose Your Profile Photo (Exact 3rd Image UI) */}
+                {isWideScreen && (
+                  <View style={styles.registerRightCol}>
+                    <View style={styles.profilePhotoContainer}>
+                      <Text style={styles.profilePhotoTitle}>Choose Your Profile Photo</Text>
+                      <Text style={styles.profilePhotoSubtitle}>
+                        {regFullName.trim().length >= 2
+                          ? 'Select from official verified portraits'
+                          : 'Select from suggested IAS officers'}
+                      </Text>
+
+                      {/* Large Center Circular Preview with Green Checkmark Badge */}
+                      <View style={styles.largeAvatarCenterWrapper}>
+                        <View style={styles.largeAvatarCircle}>
+                          {selectedPhoto ? (
+                            <Image
+                              source={{
+                                uri: getDisplayImageUrl(selectedPhoto),
+                                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CanteenApp/1.0' },
+                              }}
+                              style={styles.largeAvatarImg}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Image
+                              source={EMBLEM_IMG}
+                              style={styles.largeAvatarImg}
+                              resizeMode="contain"
+                            />
+                          )}
+                          <View style={styles.largeAvatarBadge}>
+                            <AppIcon name="checkmark" size={13} color="#ffffff" />
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* 3-Column Officer Photos Grid */}
+                      <View style={styles.officerGridContainer}>
+                        {(isExpandedViewMore ? officerPhotos : officerPhotos.slice(0, 6)).map((item, idx) => {
+                          const photoUrl = item.thumbnail || item.original;
+                          const isSelected = selectedPhoto === photoUrl;
+                          const proxiedUrl = getDisplayImageUrl(photoUrl);
+                          return (
                             <TouchableOpacity
-                              style={styles.refreshPhotoBtn}
-                              onPress={() => fetchOfficerPhotos(regFullName)}
-                              disabled={isSearchingPhotos}
-                              activeOpacity={0.7}
+                              key={item.id || `photo-${idx}`}
+                              style={styles.officerCardCol}
+                              onPress={() => setSelectedPhoto(photoUrl)}
+                              activeOpacity={0.8}
                             >
-                              <AppIcon name="refresh-outline" size={16} color="#0a3d31" />
-                            </TouchableOpacity>
-                          </View>
-                          <Text style={styles.choosePhotoSubtitle}>
-                            {isSearchingPhotos
-                              ? `Searching official photos for ${regFullName}...`
-                              : officerPhotos !== DEFAULT_SUGGESTED_OFFICERS
-                              ? `Official Photos for ${regFullName}`
-                              : 'Select from suggested IAS officers'}
-                          </Text>
-                        </View>
-
-                        {/* Large Selected Profile Circular Image with Green Checkmark */}
-                        <View style={styles.selectedPhotoWrapper}>
-                          <Image
-                            source={{ uri: selectedPhoto }}
-                            style={styles.selectedPhotoCircle}
-                          />
-                          <View style={styles.checkmarkBadge}>
-                            <Svg width={12} height={12} viewBox="0 0 24 24">
-                              <Path
-                                d="M4 12l5 5L20 6"
-                                stroke="#ffffff"
-                                strokeWidth="3.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                fill="none"
-                              />
-                            </Svg>
-                          </View>
-                        </View>
-
-                        {/* Searching Spinner */}
-                        {isSearchingPhotos ? (
-                          <View style={styles.searchingLoadingRow}>
-                            <ActivityIndicator size="small" color="#0a3d31" />
-                            <Text style={styles.searchingText}>Finding official officer photos...</Text>
-                          </View>
-                        ) : null}
-
-                        {/* 6 Photos Grid */}
-                        <View style={styles.officersGrid}>
-                          {displayedPhotos.map((officer, index) => {
-                            const isSelected = selectedPhoto === officer.img;
-                            return (
-                              <TouchableOpacity
-                                key={`${officer.id || officer.name}-${index}`}
-                                style={styles.officerCard}
-                                activeOpacity={0.8}
-                                onPress={() => {
-                                  setSelectedPhoto(officer.img);
-                                }}
-                              >
+                              <View style={[styles.officerCardImgBox, isSelected && styles.officerCardImgBoxSelected]}>
                                 <Image
-                                  source={{ uri: officer.img }}
-                                  style={[
-                                    styles.officerThumbCircle,
-                                    isSelected && styles.officerThumbSelected,
-                                  ]}
+                                  source={{
+                                    uri: proxiedUrl,
+                                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CanteenApp/1.0' },
+                                  }}
+                                  style={styles.officerCardImg}
+                                  resizeMode="cover"
                                 />
-                                <Text
-                                  style={[
-                                    styles.officerCardName,
-                                    isSelected && styles.officerCardNameSelected,
-                                  ]}
-                                  numberOfLines={2}
-                                >
-                                  {officer.name}
-                                </Text>
-                                <Text style={styles.officerCardRole}>{officer.role}</Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
+                              </View>
+                              <Text style={styles.officerCardName} numberOfLines={2}>
+                                {item.title || 'Officer'}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
 
-                        {/* View More Button */}
+                      {/* View More Button if > 6 photos */}
+                      {officerPhotos.length > 6 && (
                         <TouchableOpacity
-                          style={styles.viewMorePill}
-                          onPress={() => setShowMorePhotos(!showMorePhotos)}
+                          style={styles.viewMoreBtn}
+                          onPress={() => setIsExpandedViewMore(!isExpandedViewMore)}
                           activeOpacity={0.7}
                         >
                           <Text style={styles.viewMoreText}>
-                            {showMorePhotos ? 'View Less ∧' : 'View More ∨'}
+                            {isExpandedViewMore ? 'View Less  ⌃' : 'View More  ⌵'}
                           </Text>
                         </TouchableOpacity>
-                      </View>
-                    ) : (
-                      /* When Full Name is empty -> Display Ashoka Lion Capital Emblem */
-                      <View style={styles.emblemContainerRight}>
-                        <Image
-                          source={EMBLEM_IMG}
-                          style={styles.registerRightEmblem}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.emblemHintText}>
-                          Enter your name to load official officer photos
-                        </Text>
-                      </View>
-                    )}
+                      )}
+                    </View>
                   </View>
-                ) : null}
+                )}
               </View>
 
               {/* Bottom Card: "Already Registered? Scan your QR to continue" */}
@@ -2048,159 +1952,151 @@ const styles = StyleSheet.create({
     minHeight: 'auto',
   },
 
-  /* Empty State Emblem */
-  emblemContainerRight: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-  },
-  registerRightEmblem: {
-    width: 240,
-    height: 280,
-    opacity: 0.85,
-    resizeMode: 'contain',
-  },
-  emblemHintText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 10,
-    paddingHorizontal: 10,
-  },
-
-  /* Photo Picker State */
-  photoPickerContainer: {
+  /* Profile Photo Right Card (Matching 3rd Image UI) */
+  profilePhotoContainer: {
     width: '100%',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
   },
-  choosePhotoHeader: {
-    alignItems: 'center',
-    marginBottom: 10,
-    width: '100%',
-  },
-  choosePhotoHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  refreshPhotoBtn: {
-    padding: 4,
-    borderRadius: 6,
-    backgroundColor: '#ecfdf5',
-    borderWidth: 1,
-    borderColor: '#a7f3d0',
-  },
-  choosePhotoTitle: {
-    fontSize: 15,
+  profilePhotoTitle: {
+    fontSize: 17.5,
     fontWeight: '800',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     color: '#0a3d31',
     textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    marginBottom: 3,
+    letterSpacing: 0.3,
   },
-  choosePhotoSubtitle: {
-    fontSize: 11,
-    color: '#6b7280',
+  profilePhotoSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
     textAlign: 'center',
-    marginTop: 2,
-  },
-  selectedPhotoWrapper: {
-    position: 'relative',
     marginBottom: 12,
+  },
+  largeAvatarCenterWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 14,
   },
-  selectedPhotoCircle: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
+  largeAvatarCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     borderWidth: 2.5,
     borderColor: '#0a3d31',
+    overflow: 'visible',
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    shadowColor: '#0a3d31',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  largeAvatarImg: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     backgroundColor: '#f1f5f9',
   },
-  checkmarkBadge: {
+  largeAvatarBadge: {
     position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: '#0a3d31',
-    borderRadius: 11,
+    bottom: 0,
+    right: 0,
     width: 22,
     height: 22,
+    borderRadius: 11,
+    backgroundColor: '#0a3d31',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#ffffff',
   },
-  searchingLoadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  searchingText: {
-    fontSize: 11,
-    color: '#0a3d31',
-    fontWeight: '500',
-  },
-  officersGrid: {
+  officerGridContainer: {
+    width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-    maxWidth: 300,
+    justifyContent: 'space-between',
+    rowGap: 10,
   },
-  officerCard: {
-    width: 86,
+  officerCardCol: {
+    width: '30.5%',
     alignItems: 'center',
-    paddingVertical: 5,
-    paddingHorizontal: 2,
-    borderRadius: 8,
+    marginBottom: 4,
   },
-  officerThumbCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+  officerCardImgBox: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#f1f5f9',
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    backgroundColor: '#f1f5f9',
   },
-  officerThumbSelected: {
+  officerCardImgBoxSelected: {
     borderColor: '#0a3d31',
     borderWidth: 2.5,
   },
+  officerCardImg: {
+    width: '100%',
+    height: '100%',
+  },
   officerCardName: {
-    fontSize: 9,
+    fontSize: 9.5,
     color: '#334155',
     fontWeight: '600',
     textAlign: 'center',
-    marginTop: 3,
-    lineHeight: 11,
+    marginTop: 4,
+    lineHeight: 12,
   },
-  officerCardNameSelected: {
-    color: '#0a3d31',
-    fontWeight: '800',
-  },
-  officerCardRole: {
-    fontSize: 8,
-    color: '#64748b',
-    fontWeight: '500',
-    textAlign: 'center',
-    lineHeight: 10,
-  },
-  viewMorePill: {
+  viewMoreBtn: {
+    marginTop: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 22,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 20,
-    paddingVertical: 3,
-    paddingHorizontal: 12,
-    marginTop: 8,
-    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   viewMoreText: {
-    fontSize: 10.5,
-    color: '#475569',
+    fontSize: 11.5,
     fontWeight: '600',
+    color: '#334155',
+  },
+
+  /* Empty State Emblem */
+  emblemContainerRight: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+  },
+  registerRightEmblem: {
+    width: 220,
+    height: 240,
+    opacity: 0.95,
+    resizeMode: 'contain',
+  },
+  emblemGovTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0a3d31',
+    marginTop: 14,
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    letterSpacing: 0.5,
+  },
+  emblemCanteenSubtitle: {
+    fontSize: 12.5,
+    color: '#64748b',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
   },
 
   termsNoticeText: {
@@ -2422,21 +2318,80 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
+  /* 6-Digit PIN Enter Boxes */
+  pinBoxesGroup: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  pinGroupLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 8,
+  },
+  pinBoxesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    position: 'relative',
+  },
+  pinBox: {
+    flex: 1,
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 3,
+  },
+  pinBoxFilled: {
+    borderColor: '#10b981',
+    backgroundColor: '#ffffff',
+  },
+  pinBoxFocused: {
+    borderColor: '#10b981',
+    borderWidth: 2,
+    backgroundColor: '#ffffff',
+  },
+  pinBlackDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#0a3d31',
+  },
+  hiddenPinInput: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0,
+  },
+  pinBoxHelperText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 8,
+    textAlign: 'left',
+  },
+
   newUserActionCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#ffffff',
     borderWidth: 1.5,
-    borderColor: '#0a3d31',
+    borderColor: '#cbd5e1',
     borderRadius: 10,
-    paddingVertical: 9,
+    paddingVertical: 10,
     paddingHorizontal: 14,
   },
   newUserTitle: {
     fontSize: 13.5,
     fontWeight: '700',
-    color: '#0a3d31',
+    color: '#0f172a',
     marginLeft: 10,
     flex: 1,
   },
@@ -3093,5 +3048,65 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 16,
   },
-
+  officialSelectorRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginVertical: 10,
+  },
+  accountTypeChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  accountTypeChipActive: {
+    borderColor: '#0284c7',
+    backgroundColor: '#f0f9ff',
+  },
+  radioCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#94a3b8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioCircleActive: {
+    borderColor: '#0284c7',
+  },
+  radioInnerDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#0284c7',
+  },
+  accountTypeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  accountTypeTitleActive: {
+    color: '#0369a1',
+  },
+  accountTypeSubtitle: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748b',
+    marginTop: 1,
+  },
+  verifiedTickMini: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#0284c7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

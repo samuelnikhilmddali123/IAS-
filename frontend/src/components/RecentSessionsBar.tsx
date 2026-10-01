@@ -2,15 +2,22 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCanteen, fetchWithFallback } from '../context/CanteenContext';
+import { getDisplayImageUrl } from '../utils/imageUtils';
+
+const EMBLEM_IMAGE = require('../../assets/6a72e4e7-5e3f-43cb-bd57-bac2a1fcb7f4.png');
 
 const getStatusInfo = (status: string | undefined) => {
-  switch (status) {
-    case 'PREPARING': return { text: 'Preparing food...', emoji: '🍲' };
-    case 'COOKING': return { text: 'Cooking...', emoji: '🍳' };
-    case 'READY': return { text: 'Almost ready!', emoji: '🍽️' };
-    case 'DELIVERED': return { text: 'Dish is ready!', emoji: '🥗' };
-    default: return { text: 'Hungry? Order now!', emoji: '🍔🍟' };
+  const s = (status || '').toUpperCase();
+  if (s === 'READY' || s === 'ALMOST_READY') {
+    return { text: 'Ready', emoji: '🔔' };
   }
+  if (s === 'PREPARING' || s === 'COOKING' || s === 'IN_PROGRESS') {
+    return { text: 'Preparing Food', emoji: '🍳' };
+  }
+  if (s === 'NEW' || s === 'PENDING' || s === 'PRE_ORDERED' || s === 'PLACED' || s === 'ORDER_PLACED' || s === 'ACCEPTED') {
+    return { text: 'Order Placed', emoji: '📋' };
+  }
+  return { text: 'No active orders', emoji: '✨' };
 };
 
 const AnimatedBubble = ({ status }: { status?: string }) => {
@@ -92,10 +99,34 @@ export const RecentSessionsBar = () => {
               const resData: any = await res.json().catch(() => ({}));
               if (resData.success && resData.orders && resData.orders.length > 0) {
                 const sorted = resData.orders.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                const active = sorted.find((o: any) => ['PENDING', 'PREPARING', 'COOKING', 'READY'].includes(o.status));
+                const active = sorted.find((o: any) => {
+                  const st = (o.kitchenStatus || o.status || '').toUpperCase();
+                  return ['NEW', 'ACCEPTED', 'PENDING', 'PRE_ORDERED', 'PLACED', 'ORDER_PLACED', 'PREPARING', 'COOKING', 'IN_PROGRESS', 'ALMOST_READY', 'READY'].includes(st);
+                });
                 if (active) {
-                  s.orderStatus = active.status;
+                  const kSt = (active.kitchenStatus || '').toUpperCase();
+                  const oSt = (active.status || '').toUpperCase();
+                  if (kSt === 'NEW' || kSt === 'ACCEPTED' || oSt === 'NEW' || oSt === 'PENDING' || oSt === 'PRE_ORDERED' || oSt === 'PLACED' || oSt === 'ORDER_PLACED') {
+                    s.orderStatus = 'NEW';
+                  } else if (kSt === 'PREPARING' || kSt === 'COOKING' || oSt === 'PREPARING' || oSt === 'COOKING' || oSt === 'IN_PROGRESS') {
+                    s.orderStatus = 'PREPARING';
+                  } else if (kSt === 'READY' || kSt === 'ALMOST_READY' || oSt === 'READY' || oSt === 'ALMOST_READY') {
+                    s.orderStatus = 'READY';
+                  } else {
+                    s.orderStatus = null;
+                  }
+
+                  if (active.userName && active.userName.trim() && active.userName !== 'IAS Officer') {
+                    s.name = active.userName;
+                  }
+                  if (active.userAvatar && active.userAvatar.trim() && !active.userAvatar.includes('photo-1507003211169')) {
+                    s.avatar = active.userAvatar;
+                  }
+                } else {
+                  s.orderStatus = null;
                 }
+              } else {
+                s.orderStatus = null;
               }
             } catch (e) {}
             return s;
@@ -120,6 +151,8 @@ export const RecentSessionsBar = () => {
   return (
     <View style={styles.container}>
       {sessions.map((s) => {
+        const displayAvatar = getDisplayImageUrl(s.avatar);
+        const hasCustomAvatar = Boolean(displayAvatar && !displayAvatar.includes('photo-1507003211169'));
         return (
           <View key={s.id} style={styles.sessionItem}>
             <AnimatedBubble status={s.orderStatus} />
@@ -128,8 +161,9 @@ export const RecentSessionsBar = () => {
               onPress={() => quickLogin(s.token, s)}
             >
               <Image 
-                source={{ uri: s.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80' }} 
-                style={styles.avatarImg} 
+                source={hasCustomAvatar ? { uri: displayAvatar } : EMBLEM_IMAGE} 
+                style={styles.avatarImg}
+                resizeMode={hasCustomAvatar ? 'cover' : 'contain'} 
               />
               <View style={styles.statusDot} />
             </TouchableOpacity>

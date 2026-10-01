@@ -57,10 +57,10 @@ async function createQrLoginToken(user) {
   const now = new Date();
   const userId = String(user.id || user._id || user.officerId || user.userId || '');
   const userPhone = user.phone || user.mobile || user.userPhone || '';
-  const userName = (user.name || user.userName || 'IAS Officer').trim();
-  const userDesignation = (user.designation || 'Special Duty Officer').trim();
-  const userLocation = (user.location || user.department || '').trim();
-  const userAvatar = user.avatar || user.photoUrl || user.image || '';
+  const userName = (user.name || user.userName || 'Officer').trim();
+  const userDesignation = (user.designation || user.serviceCadre || '').trim();
+  const userLocation = (user.location || user.department || user.roomNumber || '').trim();
+  const userAvatar = (user.avatar && !user.avatar.includes('unsplash.com')) ? user.avatar : (user.photoUrl && !user.photoUrl.includes('unsplash.com') ? user.photoUrl : '');
 
   // Revoke any previous active QR for this user when generating a fresh one
   tokens.forEach((t) => {
@@ -91,6 +91,7 @@ async function createQrLoginToken(user) {
     },
   });
   
+  // Generate full branded Registration QR Card image with centered name
   try {
     const nodeHtmlToImage = require('node-html-to-image');
     const generateQrCardHtml = require('../templates/qrCardTemplate');
@@ -105,20 +106,19 @@ async function createQrLoginToken(user) {
       qrDataUrl: qrDataUrl,
       photoUrl: userAvatar,
       isLifetime: true,
-      category: user.category || 'IAS OFFICER'
     });
     
     await nodeHtmlToImage({
       output: qrFilePath,
       html: htmlString,
-      puppeteerArgs: { 
-        defaultViewport: { width: 1024, height: 1536 },
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+      type: 'png',
+      quality: 100,
+      puppeteerArgs: {
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
       }
     });
-  } catch (err) {
-    console.error('Error generating HTML QR card:', err);
-    // Fallback: save raw QR code
+  } catch (cardErr) {
+    console.warn('[QR] Falling back to standard QR code buffer:', cardErr.message);
     const qrBuffer = await QRCode.toBuffer(qrPayload, {
       errorCorrectionLevel: 'H',
       margin: 2,

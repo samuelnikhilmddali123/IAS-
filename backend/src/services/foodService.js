@@ -1,17 +1,25 @@
-﻿const dataStore = require('../storage/dataStore');
+const dataStore = require('../storage/dataStore');
 const Food = require('../models/Food');
 const mongoose = require('mongoose');
 
 function formatFoodDoc(doc) {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : { ...doc };
+  const price = Number(obj.price) || 0;
+  let officialPrice = Number(obj.officialPrice);
+  if (isNaN(officialPrice) || officialPrice <= 0) {
+    officialPrice = price > 0 ? Math.max(1, Math.round(price * 0.85)) : 0;
+  }
+
   return {
     id: obj.id || String(obj._id),
     _id: obj._id,
     name: obj.name,
     description: obj.description || '',
     portion: obj.portion || 'Standard Serving',
-    price: Number(obj.price) || 0,
+    price: price,
+    generalPrice: price,
+    officialPrice: officialPrice,
     isVeg: Boolean(obj.isVeg),
     category: (obj.category || 'lunch').toLowerCase(),
     subCategory: obj.subCategory || 'General',
@@ -121,12 +129,18 @@ const addFood = async (foodData) => {
     throw error;
   }
 
+  const priceNum = Number(foodData.price || foodData.generalPrice) || 0;
+  const officialPriceNum = foodData.officialPrice !== undefined && foodData.officialPrice !== null
+    ? Number(foodData.officialPrice)
+    : (priceNum > 0 ? Math.max(1, Math.round(priceNum * 0.85)) : 0);
+
   const foodObj = {
     id: foodData.id || ('food-' + Date.now()),
     name: foodData.name.trim(),
     description: foodData.description || '',
     portion: foodData.portion || 'Standard Serving',
-    price: Number(foodData.price) || 0,
+    price: priceNum,
+    officialPrice: officialPriceNum,
     category: (foodData.category || 'lunch').toLowerCase(),
     subCategory: foodData.subCategory || 'General',
     isVeg: foodData.isVeg !== undefined ? Boolean(foodData.isVeg) : true,

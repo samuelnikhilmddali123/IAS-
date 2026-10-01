@@ -35,8 +35,12 @@ function formatOrderDoc(doc) {
     userPhone: obj.userPhone || '',
     userAvatar: avatar,
     orderType: obj.orderType || 'INSTANT',
+    isPreOrder: (obj.orderType === 'PRE_ORDER' || Boolean(obj.isPreOrder) || Boolean(obj.pickupTime)),
     pickupDate: obj.pickupDate ? new Date(obj.pickupDate) : null,
     pickupTime: obj.pickupTime || null,
+    slotId: obj.slotId || null,
+    preOrderSlot: obj.preOrderSlot || obj.pickupTime || null,
+    mealSlot: obj.mealSlot || 'General',
     items: Array.isArray(obj.items) ? obj.items.map(item => ({
       foodId: item.foodId || item.id || '',
       id: item.id || item.foodId || '',
@@ -53,7 +57,7 @@ function formatOrderDoc(doc) {
     paymentStatus: obj.paymentStatus || 'UNPAID',
     orderNote: obj.orderNote || '',
     mealSlot: obj.mealSlot || 'General',
-    status: obj.status || 'PREPARING',
+    status: obj.status || 'NEW',
     kitchenStatus: obj.kitchenStatus || 'NEW',
     tokenNumber: obj.tokenNumber || Math.floor(10 + Math.random() * 90),
     billNumber: obj.billNumber || null,
@@ -71,8 +75,21 @@ const createOrder = async (orderData) => {
   const orderNumber = orderData.orderNumber || ('ORD-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000));
   const tokenNumber = orderData.tokenNumber || Math.floor(10 + Math.random() * 90);
 
-  // Security Rule #14: Never trust total amount sent from frontend.
-  // Validate and compute order total on backend using actual food prices.
+  // Security Rule: Validate and compute order total on backend using authenticated user isOfficial status and catalog food prices.
+  const targetUserId = orderData.userId || (orderData.user && (orderData.user.id || String(orderData.user._id)));
+  const targetUserPhone = orderData.userPhone || (orderData.user && orderData.user.phone) || '';
+  
+  const authService = require('./authService');
+  let foundUser = null;
+  if (targetUserId && targetUserId !== 'guest') {
+    try { foundUser = await authService.getUserById(targetUserId); } catch (e) {}
+  }
+  if (!foundUser && targetUserPhone) {
+    try { foundUser = await authService.getUserByPhone(targetUserPhone); } catch (e) {}
+  }
+
+  const isOfficialUser = Boolean(foundUser && foundUser.isOfficial);
+
   let foodsCatalog = [];
   if (mongoose.connection.readyState === 1) {
     try {
@@ -87,10 +104,16 @@ const createOrder = async (orderData) => {
 
   const foodPriceMap = new Map();
   foodsCatalog.forEach(f => {
-    const p = Number(f.price) || 0;
-    if (f.id) foodPriceMap.set(String(f.id), p);
-    if (f._id) foodPriceMap.set(String(f._id), p);
-    if (f.name) foodPriceMap.set(f.name.toLowerCase().trim(), p);
+    const generalPrice = Number(f.price) || 0;
+    let officialPrice = Number(f.officialPrice);
+    if (isNaN(officialPrice) || officialPrice <= 0) {
+      officialPrice = generalPrice > 0 ? Math.max(1, Math.round(generalPrice * 0.85)) : 0;
+    }
+    const appliedPrice = isOfficialUser ? officialPrice : generalPrice;
+
+    if (f.id) foodPriceMap.set(String(f.id), appliedPrice);
+    if (f._id) foodPriceMap.set(String(f._id), appliedPrice);
+    if (f.name) foodPriceMap.set(f.name.toLowerCase().trim(), appliedPrice);
   });
 
   let calculatedSubtotal = 0;
@@ -129,25 +152,20 @@ const createOrder = async (orderData) => {
   let resolvedUserPhone = orderData.userPhone || (orderData.user && orderData.user.phone) || '';
   let resolvedUserAvatar = orderData.userAvatar || (orderData.user && orderData.user.avatar) || '';
 
-  const targetUserId = orderData.userId || (orderData.user && (orderData.user.id || String(orderData.user._id)));
-  if ((!resolvedUserName || resolvedUserName === 'IAS Officer' || resolvedUserName === 'guest' || resolvedUserName === 'Officer') && (targetUserId || resolvedUserPhone)) {
-    try {
-      const authService = require('./authService');
-      let foundUser = null;
-      if (targetUserId && targetUserId !== 'guest') {
-        foundUser = await authService.getUserById(targetUserId);
-      }
-      if (!foundUser && resolvedUserPhone) {
-        foundUser = await authService.getUserByPhone(resolvedUserPhone);
-      }
-      if (foundUser) {
-        if (foundUser.name) resolvedUserName = foundUser.name;
-        if (!resolvedUserPhone && (foundUser.phone || foundUser.mobile)) resolvedUserPhone = foundUser.phone || foundUser.mobile;
-        if (!resolvedUserAvatar && foundUser.avatar) resolvedUserAvatar = foundUser.avatar;
-      }
-    } catch (e) {}
+  if (foundUser) {
+    if (foundUser.name) resolvedUserName = foundUser.name;
+    if (!resolvedUserPhone && (foundUser.phone || foundUser.mobile)) resolvedUserPhone = foundUser.phone || foundUser.mobile;
+    if (!resolvedUserAvatar && foundUser.avatar) resolvedUserAvatar = foundUser.avatar;
   }
   if (!resolvedUserName) resolvedUserName = 'IAS Officer';
+
+  const isPreOrder = (String(orderData.orderType || '').toUpperCase() === 'PRE_ORDER' || String(orderData.orderType || '').toLowerCase() === 'later' || Boolean(orderData.pickupTime) || Boolean(orderData.isPreOrder) || Boolean(orderData.slotId));
+  const orderType = isPreOrder ? 'PRE_ORDER' : (orderData.orderType || 'INSTANT');
+  const pickupTime = orderData.pickupTime || orderData.preOrderSlot || (orderData.slot && orderData.slot.label) || null;
+  const pickupDate = orderData.pickupDate ? new Date(orderData.pickupDate) : (pickupTime || isPreOrder ? new Date() : null);
+  const slotId = orderData.slotId || (orderData.slot && orderData.slot.id) || null;
+  const preOrderSlot = orderData.preOrderSlot || pickupTime || (orderData.slot && orderData.slot.label) || null;
+  const mealSlot = orderData.mealSlot || (orderData.slot && orderData.slot.mealSlot) || 'General';
 
   const orderPayload = {
     orderNumber,
@@ -161,14 +179,16 @@ const createOrder = async (orderData) => {
     grandTotal: totalAmount,
     paymentMethod: orderData.paymentMethod || 'online',
     paymentStatus: orderData.paymentStatus || 'UNPAID',
-    orderType: orderData.orderType || 'INSTANT',
-    ...(orderData.orderType === 'PRE_ORDER' ? {
-      pickupDate: orderData.pickupDate,
-      pickupTime: orderData.pickupTime
-    } : {}),
+    orderType,
+    isPreOrder,
+    pickupDate,
+    pickupTime,
+    slotId,
+    preOrderSlot,
     orderNote: orderData.orderNote || '',
-    mealSlot: orderData.mealSlot || 'General',
-    status: orderData.orderType === 'PRE_ORDER' ? 'PRE_ORDERED' : 'PREPARING',
+    mealSlot,
+    status: isPreOrder ? 'PRE_ORDERED' : (orderData.status || 'NEW'),
+    kitchenStatus: 'NEW',
     tokenNumber
   };
 
@@ -196,6 +216,18 @@ const createOrder = async (orderData) => {
 
   const finalOrder = savedOrder || jsonOrder;
 
+  // Auto-dispatch thermal KOT print for instant & prebooking orders
+  try {
+    const printerService = require('../utils/printerService');
+    if (printerService && printerService.printOrderBackend) {
+      printerService.printOrderBackend(finalOrder).catch(err => {
+        console.warn('[PRINTER] Auto-print warning:', err.message);
+      });
+    }
+  } catch (pe) {
+    console.warn('[PRINTER] Printer service invocation warning:', pe.message);
+  }
+
   // Emit KOT event to kitchen via Socket.io in real-time
   try {
     const serverModule = require('../../server');
@@ -212,16 +244,22 @@ const createOrder = async (orderData) => {
         orderNote: finalOrder.orderNote || '',
         orderCreationTime: finalOrder.createdAt,
         orderTime: finalOrder.createdAt,
-        pickupTime: finalOrder.pickupTime || null,
+        isPreOrder: finalOrder.isPreOrder,
+        pickupTime: finalOrder.pickupTime || finalOrder.preOrderSlot || null,
         pickupDate: finalOrder.pickupDate || null,
-        orderType: finalOrder.orderType || 'INSTANT',
-        kitchenStatus: finalOrder.kitchenStatus || 'NEW'
+        slotId: finalOrder.slotId || null,
+        preOrderSlot: finalOrder.preOrderSlot || finalOrder.pickupTime || null,
+        mealSlot: finalOrder.mealSlot || 'General',
+        orderType: finalOrder.orderType || (finalOrder.isPreOrder ? 'PRE_ORDER' : 'INSTANT'),
+        kitchenStatus: finalOrder.kitchenStatus || 'NEW',
+        status: finalOrder.status
       };
 
       io.emit('newKOT', kotPayload);
       io.of('/kitchen').emit('newKOT', kotPayload);
+      io.emit('preOrderCreated', kotPayload);
       io.emit('newOrder', finalOrder);
-      console.log(`[KOT] Dispatched live ticket for Order #${finalOrder.orderNumber} (Status: NEW)`);
+      console.log(`[KOT] Dispatched live ticket for Order #${finalOrder.orderNumber} (Type: ${finalOrder.orderType}, Slot: ${finalOrder.pickupTime || 'N/A'})`);
     }
   } catch (e) {
     console.warn('[KOT] Failed to emit newKOT event:', e.message);
@@ -338,14 +376,14 @@ const getAllOrdersForAdmin = async (filter = {}) => {
 };
 
 const VALID_TRANSITIONS = {
-  'NEW': ['ACCEPTED', 'PREPARING', 'READY', 'CANCELLED'],
-  'PENDING': ['ACCEPTED', 'PREPARING', 'READY', 'CANCELLED'],
-  'PRE_ORDERED': ['ACCEPTED', 'PREPARING', 'READY', 'CANCELLED'],
-  'ACCEPTED': ['PREPARING', 'READY', 'CANCELLED'],
+  'NEW': ['ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'],
+  'PENDING': ['ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'],
+  'PRE_ORDERED': ['ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'],
+  'ACCEPTED': ['PREPARING', 'READY', 'COMPLETED', 'CANCELLED'],
   'PREPARING': ['READY', 'COMPLETED', 'CANCELLED'],
   'READY': ['COMPLETED', 'PREPARING', 'CANCELLED'],
-  'COMPLETED': ['READY'],
-  'CANCELLED': []
+  'COMPLETED': ['READY', 'PREPARING', 'CANCELLED'],
+  'CANCELLED': ['NEW', 'PREPARING']
 };
 
 const updateOrderStatus = async (orderId, status) => {
@@ -531,6 +569,28 @@ const updatePaymentStatus = async (orderId, paymentStatus) => {
       io.emit('orderStatusUpdated', finalOrder);
       io.emit('orderUpdated', finalOrder);
       io.of('/kitchen').emit('orderStatusUpdated', finalOrder);
+      if (finalOrder.paymentStatus === 'PAID') {
+        const ordId = String(finalOrder._id || finalOrder.id || finalOrder.orderNumber);
+        const payPayload = {
+          orderId: ordId,
+          id: ordId,
+          _id: finalOrder._id || finalOrder.id,
+          orderNumber: finalOrder.orderNumber,
+          tokenNumber: finalOrder.tokenNumber,
+          userName: finalOrder.userName,
+          paymentStatus: 'PAID',
+          isPaid: true,
+          totalAmount: finalOrder.totalAmount,
+          items: finalOrder.items,
+          billUrl: `/api/orders/${ordId}/bill-html`
+        };
+        io.emit('printPaidBill', payPayload);
+        io.emit('orderPaid', payPayload);
+        io.emit('paymentSuccess', payPayload);
+        io.of('/kitchen').emit('printPaidBill', payPayload);
+        io.of('/kitchen').emit('orderPaid', payPayload);
+        io.of('/kitchen').emit('paymentSuccess', payPayload);
+      }
       console.log(`[Socket.IO] Broadcasted paymentStatus for #${finalOrder.orderNumber}: ${finalOrder.paymentStatus}`);
     }
   } catch (sockErr) {
@@ -612,3 +672,4 @@ module.exports = {
   getAdminStats,
   getLiveOrders
 };
+

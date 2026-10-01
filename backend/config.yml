@@ -1,0 +1,7 @@
+tunnel: a3249e7e-3905-43ad-929d-5e96720a8c22
+credentials-file: C:\Users\USER\.cloudflared\a3249e7e-3905-43ad-929d-5e96720a8c22.json
+
+ingress:
+  - hostname: restaurants.stackvil.com
+    service: http://localhost:5001
+  - service: http_status:404

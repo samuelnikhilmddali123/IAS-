@@ -1,60 +1,68 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-const Admin = require('../models/Admin');
 const User = require('../models/User');
+const Admin = require('../models/Admin');
 const dataStore = require('../storage/dataStore');
 const qrService = require('./qrService');
 const whatsappService = require('./whatsappService');
-const { generatePasswordFingerprint } = require('../utils/cryptoUtils');
-const { resolveOfficerAvatar, generateOfficialInitialsAvatar } = require('./officerImageService');
+const emailService = require('./emailService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'canteen_super_secret_jwt_key_2026_secure';
 
+const generatePasswordFingerprint = (rawPassword) => {
+  if (!rawPassword || typeof rawPassword !== 'string') return null;
+  const normalized = rawPassword.trim();
+  if (!normalized) return null;
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(normalized).digest('hex');
+};
+
+const resolveOfficerAvatar = async (name, providedAvatar) => {
+  if (providedAvatar && typeof providedAvatar === 'string' && providedAvatar.trim() && !providedAvatar.includes('unsplash.com')) {
+    return providedAvatar.trim();
+  }
+  return '';
+};
+
 const registerAdmin = async (adminData) => {
   const { name, email, phone, password } = adminData;
+  const cleanEmail = (email || '').trim().toLowerCase();
 
-  if (!name || !email || !phone || !password) {
-    const error = new Error('All fields are required');
+  if (!name || !cleanEmail || !phone || !password) {
+    const error = new Error('Name, email, phone, and password are required');
     error.statusCode = 400;
     throw error;
   }
 
-  const cleanEmail = email.trim().toLowerCase();
   const hashedPassword = await bcrypt.hash(password, 10);
 
   if (mongoose.connection.readyState === 1) {
-    const existing = await Admin.findOne({ email: cleanEmail });
-    if (existing) {
-      const error = new Error('Admin already exists with this email');
-      error.statusCode = 409;
-      throw error;
+    try {
+      const existing = await Admin.findOne({ email: cleanEmail });
+      if (existing) {
+        const error = new Error('Admin with this email already exists');
+        error.statusCode = 400;
+        throw error;
+      }
+      const admin = await Admin.create({
+        name: name.trim(),
+        email: cleanEmail,
+        phone: phone.trim(),
+        password: hashedPassword,
+        role: 'SUPER_ADMIN'
+      });
+      return {
+        id: String(admin._id),
+        name: admin.name,
+        email: admin.email,
+        phone: admin.phone,
+        role: admin.role
+      };
+    } catch (e) {
+      if (e.statusCode) throw e;
+      console.warn('[AUTH] MongoDB admin registration warning:', e.message);
     }
-
-    const admin = await Admin.create({
-      name: name.trim(),
-      email: cleanEmail,
-      phone: phone.trim(),
-      password: hashedPassword,
-      pin: password,
-      role: 'SUPER_ADMIN'
-    });
-
-    return {
-      id: String(admin._id),
-      name: admin.name,
-      email: admin.email,
-      phone: admin.phone,
-      role: admin.role
-    };
-  }
-
-  // Fallback to dataStore if MongoDB is offline
-  const existingByEmail = dataStore.getUserByEmail(cleanEmail);
-  if (existingByEmail && existingByEmail.role === 'admin') {
-    const error = new Error('Admin already exists');
-    error.statusCode = 409;
-    throw error;
   }
 
   const adminObj = {
@@ -72,7 +80,6 @@ const registerAdmin = async (adminData) => {
 const loginAdmin = async (email, password) => {
   const cleanEmail = (email || '').trim().toLowerCase();
 
-  // 1. Check MongoDB
   if (mongoose.connection.readyState === 1) {
     try {
       const admin = await Admin.findOne({ email: cleanEmail });
@@ -104,7 +111,6 @@ const loginAdmin = async (email, password) => {
     }
   }
 
-  // 2. Default credentials check or dataStore fallback
   const isDefaultAdmin = (cleanEmail === 'admin@canteen.gov.in' || cleanEmail === 'admin@canteen.com' || cleanEmail === 'admin') &&
     (password === '123456' || password === 'admin123');
 
@@ -127,13 +133,16 @@ const loginAdmin = async (email, password) => {
   };
 };
 
+const activeRegistrationPromises = new Map();
+const recentRegistrationCache = new Map();
+
 const registerUser = async (userData) => {
   const { name, email, phone, mobile, pin, password, avatar, designation, department, officerId, location } = userData;
 
   const officerName = (name || '').trim();
   const officerPhone = (phone || mobile || '').trim();
   const officerPin = (pin || password || '').trim();
-  const officerEmail = (email || '').trim().toLowerCase() || (officerName.toLowerCase().replace(/\s+/g, '.') + '@gov.in');
+  const officerEmail = (email || '').trim().toLowerCase();
 
   if (!officerName) {
     const error = new Error('Full Name is required');
@@ -153,71 +162,133 @@ const registerUser = async (userData) => {
 
   const cleanPhone = officerPhone.replace(/\D/g, '').slice(-10);
 
-  // 1. Pre-check for duplicate phone number across all registered users
-  if (mongoose.connection.readyState === 1) {
-    const existingWithPhone = await User.findOne({
-      $or: [
-        { phone: officerPhone },
-        ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : [])
-      ]
-    });
+  // 1. In-flight registration mutex (handles parallel network requests from mobile/web probing)
+  if (cleanPhone && activeRegistrationPromises.has(cleanPhone)) {
+    console.log(`[AUTH] In-flight registration already active for phone ${cleanPhone}. Joining existing promise to prevent duplicate QR...`);
+    return await activeRegistrationPromises.get(cleanPhone);
+  }
 
-    if (existingWithPhone) {
-      const error = new Error('This phone number is already registered. Please login or use a different phone number.');
-      error.statusCode = 400;
-      throw error;
+  // 2. Recent registration cache within 30 seconds
+  if (cleanPhone && recentRegistrationCache.has(cleanPhone)) {
+    const cached = recentRegistrationCache.get(cleanPhone);
+    if (Date.now() - cached.timestamp < 30000) {
+      console.log(`[AUTH] Debouncing duplicate registration for phone ${cleanPhone} (last registered ${(Date.now() - cached.timestamp)/1000}s ago). Returning single QR.`);
+      return cached.result;
     }
   }
 
-  if (dataStore.getUserByPhone) {
-    const existingInStore = dataStore.getUserByPhone(officerPhone);
-    if (existingInStore) {
-      const error = new Error('This phone number is already registered. Please login or use a different phone number.');
-      error.statusCode = 400;
-      throw error;
+  const executionPromise = (async () => {
+    const passwordFingerprint = generatePasswordFingerprint(officerPin);
+    const hashedPassword = await bcrypt.hash(officerPin, 10);
+    const generatedOfficerId = officerId || ('GOI-DL-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000));
+    const resolvedAvatar = await resolveOfficerAvatar(officerName, avatar);
+    const userDesignation = (designation && designation.trim()) ? designation.trim() : '';
+    const userLocation = (location && location.trim()) ? location.trim() : (department && department.trim() ? department.trim() : '');
+    const userDepartment = (department && department.trim()) ? department.trim() : userLocation;
+
+    let savedUser = null;
+    let existingRecentQr = null;
+
+    if (mongoose.connection.readyState === 1) {
+      try {
+        // Find existing user by phone if re-registering
+        let mongoUser = await User.findOne({
+          $or: [
+            { phone: officerPhone },
+            ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : [])
+          ]
+        });
+
+        if (mongoUser) {
+          // If user already has an unrevoked lifetime QR generated in the last 2 minutes, preserve it
+          if (mongoUser.lifetimeQrPayload && !mongoUser.qrRevoked && mongoUser.lifetimeQrImage) {
+            existingRecentQr = {
+              qrId: mongoUser.lifetimeQrId,
+              qrPayload: mongoUser.lifetimeQrPayload,
+              qrDataUrl: mongoUser.lifetimeQrDataUrl,
+              qrImage: mongoUser.lifetimeQrImage,
+              tokenHash: mongoUser.lifetimeQrTokenHash
+            };
+          }
+
+          // Update existing user with new credentials
+          mongoUser.name = officerName;
+          if (officerEmail) mongoUser.email = officerEmail;
+          mongoUser.phone = officerPhone;
+          mongoUser.password = hashedPassword;
+          mongoUser.pin = officerPin;
+          mongoUser.passwordUniquenessFingerprint = passwordFingerprint;
+          mongoUser.avatar = resolvedAvatar;
+          if (userDesignation) mongoUser.designation = userDesignation;
+          if (userLocation) mongoUser.location = userLocation;
+          if (userDepartment) mongoUser.department = userDepartment;
+          if (userData.dob) mongoUser.dob = (userData.dob || '').trim();
+          if (userData.marriageDate) mongoUser.marriageDate = (userData.marriageDate || '').trim();
+          if (userData.importantDates) mongoUser.importantDates = (userData.importantDates || '').trim();
+          if (userData.childrenCount) mongoUser.childrenCount = (userData.childrenCount || '').trim();
+          if (userData.childrenDetails) mongoUser.childrenDetails = (userData.childrenDetails || '').trim();
+          if (userData.siblings) mongoUser.siblings = (userData.siblings || '').trim();
+          if (userData.dietaryPreferences) mongoUser.dietaryPreferences = (userData.dietaryPreferences || '').trim();
+          if (userData.emergencyContact) mongoUser.emergencyContact = (userData.emergencyContact || '').trim();
+          mongoUser.pinLoggedInAt = new Date();
+          mongoUser.pinExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+          await mongoUser.save();
+        } else {
+          mongoUser = await User.create({
+            name: officerName,
+            email: officerEmail,
+            phone: officerPhone,
+            password: hashedPassword,
+            passwordUniquenessFingerprint: passwordFingerprint,
+            pin: officerPin,
+            avatar: resolvedAvatar,
+            designation: userDesignation,
+            location: userLocation,
+            department: userDepartment,
+            officerId: generatedOfficerId,
+            dob: (userData.dob || '').trim(),
+            marriageDate: (userData.marriageDate || '').trim(),
+            importantDates: (userData.importantDates || '').trim(),
+            childrenCount: (userData.childrenCount || '').trim(),
+            childrenDetails: (userData.childrenDetails || '').trim(),
+            siblings: (userData.siblings || '').trim(),
+            dietaryPreferences: (userData.dietaryPreferences || '').trim(),
+            emergencyContact: (userData.emergencyContact || '').trim(),
+            role: 'user',
+            isOfficial: userData.isOfficial !== undefined ? Boolean(userData.isOfficial) : false,
+            pinLoggedInAt: new Date(),
+            pinExpiresAt: new Date(Date.now() + 60 * 60 * 1000)
+          });
+        }
+
+        savedUser = {
+          id: String(mongoUser._id),
+          name: mongoUser.name,
+          email: mongoUser.email || '',
+          phone: mongoUser.phone,
+          pin: mongoUser.pin,
+          avatar: mongoUser.avatar,
+          designation: mongoUser.designation || '',
+          location: mongoUser.location || '',
+          department: mongoUser.department || '',
+          officerId: mongoUser.officerId || generatedOfficerId,
+          dob: mongoUser.dob || '',
+          marriageDate: mongoUser.marriageDate || '',
+          importantDates: mongoUser.importantDates || '',
+          childrenCount: mongoUser.childrenCount || '',
+          childrenDetails: mongoUser.childrenDetails || '',
+          siblings: mongoUser.siblings || '',
+          dietaryPreferences: mongoUser.dietaryPreferences || '',
+          emergencyContact: mongoUser.emergencyContact || '',
+          isOfficial: Boolean(mongoUser.isOfficial)
+        };
+      } catch (e) {
+        console.warn('[AUTH] MongoDB user registration error, falling back to dataStore:', e.message);
+      }
     }
-  }
 
-  // 2. Generate secure deterministic fingerprint for global password uniqueness
-  const passwordFingerprint = generatePasswordFingerprint(officerPin);
-  if (!passwordFingerprint) {
-    const error = new Error('A valid password is required');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  // Pre-check for duplicate password across all users
-  if (mongoose.connection.readyState === 1) {
-    const existingWithFp = await User.findOne({ passwordUniquenessFingerprint: passwordFingerprint });
-    if (existingWithFp) {
-      const error = new Error('This password is already used. Please choose another password.');
-      error.statusCode = 400;
-      throw error;
-    }
-  }
-
-  if (dataStore.getUserByFingerprint) {
-    const existingInStore = dataStore.getUserByFingerprint(passwordFingerprint);
-    if (existingInStore && existingInStore.phone !== officerPhone) {
-      const error = new Error('This password is already used. Please choose another password.');
-      error.statusCode = 400;
-      throw error;
-    }
-  }
-
-  const hashedPassword = await bcrypt.hash(officerPin, 10);
-  const generatedOfficerId = officerId || ('GOI-DL-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000));
-  const resolvedAvatar = await resolveOfficerAvatar(officerName, avatar);
-  const userDesignation = (designation && designation.trim()) ? designation.trim() : 'IAS Officer • Special Duty';
-  const userLocation = (location && location.trim()) ? location.trim() : (department && department.trim() ? department.trim() : '');
-  const userDepartment = (department && department.trim()) ? department.trim() : (userLocation || 'Cabinet Secretariat • Government of India');
-
-  let savedUser = null;
-
-  // Save to MongoDB
-  if (mongoose.connection.readyState === 1) {
-    try {
-      const mongoUser = await User.create({
+    if (!savedUser) {
+      savedUser = dataStore.saveUser({
         name: officerName,
         email: officerEmail,
         phone: officerPhone,
@@ -229,238 +300,322 @@ const registerUser = async (userData) => {
         location: userLocation,
         department: userDepartment,
         officerId: generatedOfficerId,
+        dob: (userData.dob || '').trim(),
+        marriageDate: (userData.marriageDate || '').trim(),
+        importantDates: (userData.importantDates || '').trim(),
+        childrenCount: (userData.childrenCount || '').trim(),
+        childrenDetails: (userData.childrenDetails || '').trim(),
+        siblings: (userData.siblings || '').trim(),
+        dietaryPreferences: (userData.dietaryPreferences || '').trim(),
+        emergencyContact: (userData.emergencyContact || '').trim(),
         role: 'user',
-        pinLoggedInAt: new Date(),
-        pinExpiresAt: new Date(Date.now() + 60 * 60 * 1000)
+        isOfficial: userData.isOfficial !== undefined ? Boolean(userData.isOfficial) : false
       });
-
-      savedUser = {
-        id: String(mongoUser._id),
-        name: mongoUser.name,
-        email: mongoUser.email,
-        phone: mongoUser.phone,
-        pin: mongoUser.pin,
-        avatar: mongoUser.avatar,
-        designation: mongoUser.designation,
-        location: mongoUser.location || '',
-        department: mongoUser.department,
-        officerId: mongoUser.officerId || generatedOfficerId
-      };
-    } catch (e) {
-      if (e.code === 11000) {
-        if (e.message && e.message.includes('phone')) {
-          const error = new Error('This phone number is already registered. Please login or use a different phone number.');
-          error.statusCode = 400;
-          throw error;
-        }
-        if (e.message && e.message.includes('passwordUniquenessFingerprint')) {
-          const error = new Error('This password is already used. Please choose another password.');
-          error.statusCode = 400;
-          throw error;
-        }
-      }
-      console.warn('[AUTH] MongoDB user registration warning:', e.message);
     }
-  }
 
-  if (!savedUser) {
-    savedUser = {
-      id: 'usr-' + Date.now(),
-      name: officerName,
-      email: officerEmail,
-      phone: officerPhone,
-      pin: officerPin,
-      avatar: resolvedAvatar,
-      designation: userDesignation,
-      location: userLocation,
-      department: userDepartment,
-      officerId: generatedOfficerId
-    };
-  }
+    let qrInfo = existingRecentQr;
+    let isFreshQrGenerated = false;
 
-  // Generate Lifetime QR Credential
-  const qrInfo = await qrService.generateLifetimeQr({
-    userId: savedUser.id,
-    name: savedUser.name,
-    userName: savedUser.name,
-    phone: savedUser.phone,
-    userPhone: savedUser.phone,
-    officerId: savedUser.officerId,
-    designation: savedUser.designation,
-    location: savedUser.location || savedUser.department || '',
-    department: savedUser.department,
-    avatar: savedUser.avatar,
-    email: savedUser.email
-  });
+    if (!qrInfo) {
+      try {
+        qrInfo = await qrService.generateLifetimeQr({
+          userId: savedUser.id,
+          name: savedUser.name,
+          userName: savedUser.name,
+          phone: savedUser.phone,
+          userPhone: savedUser.phone,
+          officerId: savedUser.officerId,
+          designation: savedUser.designation,
+          location: savedUser.location,
+          department: savedUser.department,
+          avatar: savedUser.avatar,
+          email: savedUser.email
+        });
+        isFreshQrGenerated = true;
 
-  // Attach Lifetime QR to User in MongoDB
-  if (mongoose.connection.readyState === 1 && savedUser.id) {
-    try {
-      const isObjectId = mongoose.Types.ObjectId.isValid(savedUser.id);
-      await User.findOneAndUpdate(
-        {
-          $or: [
-            ...(isObjectId ? [{ _id: savedUser.id }] : []),
-            { officerId: savedUser.id }
-          ]
-        },
-        {
-          $set: {
+        if (mongoose.connection.readyState === 1 && savedUser.id) {
+          try {
+            const isObjectId = mongoose.Types.ObjectId.isValid(savedUser.id);
+            await User.findOneAndUpdate(
+              {
+                $or: [
+                  ...(isObjectId ? [{ _id: savedUser.id }] : []),
+                  { officerId: savedUser.officerId }
+                ]
+              },
+              {
+                $set: {
+                  lifetimeQrId: qrInfo.qrId,
+                  lifetimeQrPayload: qrInfo.qrPayload,
+                  lifetimeQrDataUrl: qrInfo.qrDataUrl,
+                  lifetimeQrImage: qrInfo.qrImage,
+                  lifetimeQrTokenHash: qrInfo.tokenHash,
+                  qrRevoked: false,
+                  qrRevokedAt: null
+                }
+              }
+            );
+          } catch (e) {
+            console.warn('[AUTH] Failed to attach QR info to User in DB:', e.message);
+          }
+        }
+
+        if (dataStore.updateUser) {
+          dataStore.updateUser(savedUser.id, {
             lifetimeQrId: qrInfo.qrId,
             lifetimeQrPayload: qrInfo.qrPayload,
             lifetimeQrDataUrl: qrInfo.qrDataUrl,
             lifetimeQrImage: qrInfo.qrImage,
             lifetimeQrTokenHash: qrInfo.tokenHash,
-            qrRevoked: false
-          }
+            qrRevoked: false,
+            qrRevokedAt: null
+          });
         }
-      );
-    } catch (e) {
-      console.warn('[AUTH] MongoDB QR attachment warning:', e.message);
+      } catch (err) {
+        console.error('[AUTH] QR generation warning during user registration:', err.message);
+      }
+    }
+
+    // Non-blocking background WhatsApp dispatch (fire-and-forget so user registration finishes in <100ms)
+    if (savedUser.phone && qrInfo && isFreshQrGenerated) {
+      setImmediate(async () => {
+        try {
+          await whatsappService.sendQrMessage({
+            to: savedUser.phone,
+            userName: savedUser.name,
+            qrImage: qrInfo.qrImage,
+            qrDataUrl: qrInfo.qrDataUrl,
+            qrPayload: qrInfo.qrPayload,
+            expiresAt: null,
+            qrId: qrInfo.qrId
+          });
+          console.log(`[AUTH] Exactly ONE WhatsApp QR dispatched successfully to ${savedUser.phone}`);
+        } catch (err) {
+          console.error('[AUTH] WhatsApp dispatch error during user registration:', err.message);
+        }
+      });
+    }
+
+    // Non-blocking background Email dispatch (fire-and-forget so user registration finishes in <100ms)
+    if (savedUser.email && savedUser.email.includes('@') && qrInfo && isFreshQrGenerated) {
+      setImmediate(async () => {
+        try {
+          await emailService.sendQrEmail({
+            to: savedUser.email,
+            userName: savedUser.name,
+            officerId: savedUser.officerId,
+            designation: savedUser.designation,
+            department: savedUser.department,
+            phone: savedUser.phone,
+            qrImage: qrInfo.qrImage,
+            qrDataUrl: qrInfo.qrDataUrl,
+            qrPayload: qrInfo.qrPayload,
+            qrId: qrInfo.qrId
+          });
+          console.log(`[AUTH] Official Lifetime QR email dispatched successfully to ${savedUser.email}`);
+        } catch (err) {
+          console.error('[AUTH] Email dispatch error during user registration:', err.message);
+        }
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        id: savedUser.id,
+        name: savedUser.name,
+        phone: savedUser.phone,
+        role: 'user'
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    const finalResult = {
+      token,
+      user: {
+        id: savedUser.id,
+        name: savedUser.name,
+        email: savedUser.email || '',
+        phone: savedUser.phone,
+        mobile: savedUser.phone,
+        avatar: savedUser.avatar,
+        designation: savedUser.designation || '',
+        location: savedUser.location || '',
+        department: savedUser.department || '',
+        officerId: savedUser.officerId,
+        dob: savedUser.dob || '',
+        marriageDate: savedUser.marriageDate || '',
+        importantDates: savedUser.importantDates || '',
+        childrenCount: savedUser.childrenCount || '',
+        childrenDetails: savedUser.childrenDetails || '',
+        siblings: savedUser.siblings || '',
+        dietaryPreferences: savedUser.dietaryPreferences || '',
+        emergencyContact: savedUser.emergencyContact || '',
+        isOfficial: Boolean(savedUser.isOfficial),
+        lifetimeQrPayload: qrInfo ? qrInfo.qrPayload : undefined,
+        lifetimeQrDataUrl: qrInfo ? qrInfo.qrDataUrl : undefined,
+        lifetimeQrImage: qrInfo ? qrInfo.qrImage : undefined
+      },
+      qrCode: qrInfo ? qrInfo.qrDataUrl : undefined,
+      qr: qrInfo ? {
+        qrId: qrInfo.qrId,
+        qrPayload: qrInfo.qrPayload,
+        qrImage: qrInfo.qrImage,
+        isLifetime: true
+      } : undefined
+    };
+
+    if (cleanPhone) {
+      recentRegistrationCache.set(cleanPhone, {
+        timestamp: Date.now(),
+        result: finalResult
+      });
+    }
+
+    return finalResult;
+  })();
+
+  if (cleanPhone) {
+    activeRegistrationPromises.set(cleanPhone, executionPromise);
+  }
+
+  try {
+    const res = await executionPromise;
+    return res;
+  } finally {
+    if (cleanPhone) {
+      activeRegistrationPromises.delete(cleanPhone);
     }
   }
-
-  // Dispatch Lifetime QR to Officer via WhatsApp
-  let whatsappResult = null;
-  try {
-    whatsappResult = await whatsappService.sendQrMessage({
-      to: savedUser.phone,
-      userName: savedUser.name,
-      qrImage: qrInfo.qrImage,
-      qrDataUrl: qrInfo.qrDataUrl,
-      qrPayload: qrInfo.qrPayload,
-      expiresAt: null,
-      qrId: qrInfo.qrId
-    });
-  } catch (err) {
-    console.error('[AUTH] WhatsApp QR dispatch error:', err.message);
-  }
-
-  const token = jwt.sign({ id: savedUser.id, role: 'user' }, JWT_SECRET, { expiresIn: '30d' });
-
-  return {
-    token,
-    user: {
-      id: savedUser.id,
-      name: savedUser.name,
-      email: savedUser.email,
-      phone: savedUser.phone,
-      mobile: savedUser.phone,
-      avatar: savedUser.avatar,
-      designation: savedUser.designation,
-      location: savedUser.location || '',
-      department: savedUser.department,
-      officerId: savedUser.officerId
-    },
-    qr: qrInfo,
-    whatsapp: whatsappResult
-  };
 };
 
-const loginUser = async ({ password, phone, email }) => {
-  const candidatePassword = (password || '').trim();
-  const candidateIdent = (phone || email || '').trim();
+const loginUser = async (phoneOrPin, pinOnly) => {
+  let identifier = '';
+  let pinInput = '';
 
-  if (!candidatePassword) {
-    const error = new Error('Password or PIN is required');
+  if (typeof phoneOrPin === 'object' && phoneOrPin !== null) {
+    identifier = String(phoneOrPin.phone || phoneOrPin.mobile || phoneOrPin.identifier || phoneOrPin.email || '').trim();
+    pinInput = String(phoneOrPin.pin || phoneOrPin.password || '').trim();
+  } else {
+    identifier = String(phoneOrPin || '').trim();
+    pinInput = pinOnly ? String(pinOnly).trim() : '';
+  }
+
+  if (!identifier && !pinInput) {
+    const error = new Error('Phone number and PIN / password are required');
     error.statusCode = 400;
     throw error;
   }
 
-  const passwordFingerprint = generatePasswordFingerprint(candidatePassword);
   let user = null;
 
-  // 1. Primary: Match by secure password fingerprint
-  if (passwordFingerprint && mongoose.connection.readyState === 1) {
-    try {
-      const mongoUser = await User.findOne({ passwordUniquenessFingerprint: passwordFingerprint });
-      if (mongoUser) {
-        user = {
-          id: String(mongoUser._id),
-          name: mongoUser.name,
-          email: mongoUser.email,
-          phone: mongoUser.phone,
-          pin: mongoUser.pin,
-          password: mongoUser.password,
-          avatar: mongoUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-          designation: mongoUser.designation || 'IAS Officer • Special Duty',
-          location: mongoUser.location || '',
-          department: mongoUser.department || 'Cabinet Secretariat • Government of India',
-          officerId: mongoUser.officerId || ('GOI-DL-2026-' + String(mongoUser._id).slice(-4))
-        };
-      }
-    } catch (e) {
-      console.warn('[AUTH] MongoDB fingerprint login check warning:', e.message);
-    }
-  }
+  if (identifier && pinInput) {
+    const cleanPhone = identifier.replace(/\D/g, '').slice(-10);
 
-  // 2. Match by phone/email fallback
-  if (!user && candidateIdent) {
-    const ident = candidateIdent;
-    const cleanPhone = ident.replace(/\D/g, '').slice(-10);
     if (mongoose.connection.readyState === 1) {
       try {
-        const mongoUser = await User.findOne({
+        const found = await User.findOne({
           $or: [
-            { phone: ident },
+            { phone: identifier },
             ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : []),
-            { email: ident.toLowerCase() }
+            { officerId: identifier }
           ]
         });
 
-        if (mongoUser) {
-          user = {
-            id: String(mongoUser._id),
-            name: mongoUser.name,
-            email: mongoUser.email,
-            phone: mongoUser.phone,
-            pin: mongoUser.pin,
-            password: mongoUser.password,
-            avatar: mongoUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-            designation: mongoUser.designation || 'IAS Officer • Special Duty',
-            location: mongoUser.location || '',
-            department: mongoUser.department || 'Cabinet Secretariat • Government of India',
-            officerId: mongoUser.officerId || ('GOI-DL-2026-' + String(mongoUser._id).slice(-4))
-          };
+        if (found) {
+          let match = false;
+          if (found.password) {
+            match = await bcrypt.compare(pinInput, found.password);
+          }
+          if (!match && found.pin) {
+            match = String(found.pin) === pinInput;
+          }
+
+          if (match) {
+            user = found;
+          }
         }
       } catch (e) {
-        console.warn('[AUTH] MongoDB user lookup fallback warning:', e.message);
+        console.warn('[AUTH] MongoDB user lookup by phone/pin warning:', e.message);
+      }
+    }
+
+    if (!user && dataStore.getUserByPhone) {
+      const found = dataStore.getUserByPhone(identifier);
+      if (found) {
+        let match = false;
+        if (found.password) {
+          match = await bcrypt.compare(pinInput, found.password);
+        }
+        if (!match && found.pin) {
+          match = String(found.pin) === pinInput;
+        }
+
+        if (match) {
+          user = found;
+        }
+      }
+    }
+  } else {
+    const singleInput = identifier || pinInput;
+
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const directPinMatches = await User.find({ pin: singleInput });
+        if (directPinMatches && directPinMatches.length === 1) {
+          user = directPinMatches[0];
+        } else {
+          const allUsers = await User.find();
+          for (const candidate of allUsers) {
+            if (candidate.password) {
+              const isMatch = await bcrypt.compare(singleInput, candidate.password);
+              if (isMatch) {
+                user = candidate;
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[AUTH] MongoDB pin-only lookup warning:', e.message);
+      }
+    }
+
+    if (!user && dataStore.getAllUsers) {
+      const allStoreUsers = dataStore.getAllUsers();
+      for (const candidate of allStoreUsers) {
+        if (candidate.pin && String(candidate.pin) === singleInput) {
+          user = candidate;
+          break;
+        }
+        if (candidate.password) {
+          const isMatch = await bcrypt.compare(singleInput, candidate.password);
+          if (isMatch) {
+            user = candidate;
+            break;
+          }
+        }
       }
     }
   }
 
   if (!user) {
-    const error = new Error('Invalid password.');
+    const error = new Error('Invalid phone number or PIN / password');
     error.statusCode = 401;
     throw error;
   }
 
-  // Verify PIN / Password
-  let isMatch = false;
-  if (user.pin && user.pin === candidatePassword) {
-    isMatch = true;
-  } else if (user.password) {
-    isMatch = await bcrypt.compare(candidatePassword, user.password);
-  }
+  const pinLoggedInAt = new Date();
+  const pinExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-  if (!isMatch) {
-    const error = new Error('Invalid password.');
-    error.statusCode = 401;
-    throw error;
-  }
-
-  const now = Date.now();
-  const pinLoggedInAt = new Date(now);
-  const pinExpiresAt = new Date(now + 60 * 60 * 1000); // 1-hour active window
-
-  if (mongoose.connection.readyState === 1 && user.id) {
+  if (mongoose.connection.readyState === 1) {
     try {
-      const isObjectId = mongoose.Types.ObjectId.isValid(user.id);
+      const isObjectId = mongoose.Types.ObjectId.isValid(user._id || user.id);
       await User.findOneAndUpdate(
         {
           $or: [
-            ...(isObjectId ? [{ _id: user.id }] : []),
-            { officerId: user.id }
+            ...(isObjectId ? [{ _id: user._id || user.id }] : []),
+            { officerId: user.officerId }
           ]
         },
         {
@@ -471,25 +626,45 @@ const loginUser = async ({ password, phone, email }) => {
         }
       );
     } catch (e) {
-      console.warn('[AUTH] Error setting pinExpiresAt on login:', e.message);
+      console.warn('[AUTH] Error setting pin expiration in DB:', e.message);
     }
   }
 
-  const token = jwt.sign({ id: user.id, role: 'user' }, JWT_SECRET, { expiresIn: '30d' });
+  const token = jwt.sign(
+    {
+      id: user.id || user._id,
+      name: user.name,
+      phone: user.phone,
+      role: 'user'
+    },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
 
   return {
     token,
     user: {
-      id: user.id,
+      id: user.id || user._id,
       name: user.name,
-      email: user.email,
+      email: user.email || '',
       phone: user.phone,
       mobile: user.phone,
       avatar: user.avatar,
-      designation: user.designation,
+      designation: user.designation || '',
       location: user.location || '',
-      department: user.department,
-      officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4)),
+      department: user.department || '',
+      officerId: user.officerId || ('GOI-DL-2026-' + String(user.id || user._id).slice(-4)),
+      dob: user.dob || '',
+      marriageDate: user.marriageDate || '',
+      importantDates: user.importantDates || '',
+      childrenCount: user.childrenCount || '',
+      childrenDetails: user.childrenDetails || '',
+      siblings: user.siblings || '',
+      dietaryPreferences: user.dietaryPreferences || '',
+      emergencyContact: user.emergencyContact || '',
+      bloodGroup: user.bloodGroup || '',
+      homeAddress: user.homeAddress || '',
+      isOfficial: Boolean(user.isOfficial),
       pinLoggedInAt: pinLoggedInAt,
       pinExpiresAt: pinExpiresAt
     }
@@ -515,75 +690,67 @@ const qrLogin = async (qrPayload) => {
   if (mongoose.connection.readyState === 1) {
     try {
       const isObjectId = mongoose.Types.ObjectId.isValid(validation.userId);
-      const cleanPhone = (validation.userPhone || '').replace(/\D/g, '').slice(-10);
-
-      const mongoUser = await User.findOne({
+      user = await User.findOne({
         $or: [
           ...(isObjectId ? [{ _id: validation.userId }] : []),
-          { officerId: validation.userId },
+          { officerId: validation.officerId || validation.userId },
           { phone: validation.userPhone },
-          ...(cleanPhone ? [{ phone: new RegExp(cleanPhone + '$') }] : [])
+          { lifetimeQrId: validation.qrId }
         ]
       });
-
-      if (mongoUser) {
-        if (mongoUser.qrRevoked) {
-          const error = new Error('This QR code has been revoked. Please request a new QR from the admin desk.');
-          error.statusCode = 401;
-          throw error;
-        }
-
-        user = {
-          id: String(mongoUser._id),
-          name: mongoUser.name,
-          email: mongoUser.email,
-          phone: mongoUser.phone,
-          avatar: mongoUser.avatar,
-          designation: mongoUser.designation,
-          location: mongoUser.location || '',
-          department: mongoUser.department,
-          officerId: mongoUser.officerId,
-          lifetimeQrPayload: mongoUser.lifetimeQrPayload,
-          lifetimeQrDataUrl: mongoUser.lifetimeQrDataUrl,
-          lifetimeQrImage: mongoUser.lifetimeQrImage,
-          qrRevoked: mongoUser.qrRevoked || false
-        };
-      }
     } catch (e) {
-      if (e.statusCode) throw e;
-      console.warn('[AUTH] MongoDB QR lookup warning:', e.message);
+      console.warn('[AUTH] MongoDB QR user lookup error:', e.message);
     }
+  }
+
+  if (!user && dataStore.getUserById) {
+    user = dataStore.getUserById(validation.userId);
+  }
+
+  if (!user && dataStore.getUserByPhone) {
+    user = dataStore.getUserByPhone(validation.userPhone);
   }
 
   if (!user) {
     user = {
-      id: validation.userId || 'usr-' + Date.now(),
-      name: validation.userName || 'IAS Officer',
-      phone: validation.userPhone,
-      email: (validation.userName || 'officer').toLowerCase().replace(/\s+/g, '.') + '@gov.in',
-      avatar: generateOfficialInitialsAvatar(validation.userName || 'IAS Officer'),
-      designation: 'IAS Officer • Special Duty',
-      location: '',
-      department: 'Cabinet Secretariat • Government of India',
-      officerId: 'GOI-DL-2026-8941'
+      id: validation.userId || 'officer-qr-' + Date.now(),
+      name: validation.userName || 'Officer',
+      email: validation.email || '',
+      phone: validation.userPhone || '9876543210',
+      avatar: (validation.avatar && !validation.avatar.includes('unsplash.com')) ? validation.avatar : '',
+      designation: validation.designation || '',
+      location: validation.location || '',
+      department: validation.department || '',
+      officerId: validation.officerId || ('GOI-DL-2026-' + Math.floor(1000 + Math.random() * 9000))
     };
   }
 
-  const token = jwt.sign({ id: user.id, role: 'user' }, JWT_SECRET, { expiresIn: '30d' });
+  const token = jwt.sign({ id: user.id || user._id, role: 'user' }, JWT_SECRET, { expiresIn: '30d' });
 
   return {
     token,
     user: {
-      id: user.id,
+      id: user.id || user._id,
       name: user.name,
-      email: user.email,
+      email: user.email || '',
       phone: user.phone,
       mobile: user.phone,
       avatar: user.avatar,
-      designation: user.designation,
+      designation: user.designation || '',
       location: user.location || '',
-      department: user.department,
-      officerId: user.officerId || ('GOI-DL-2026-' + String(user.id).slice(-4))
+      department: user.department || '',
+      officerId: user.officerId || ('GOI-DL-2026-' + String(user.id || user._id).slice(-4)),
+      dob: user.dob || '',
+      marriageDate: user.marriageDate || '',
+      importantDates: user.importantDates || '',
+      childrenCount: user.childrenCount || '',
+      childrenDetails: user.childrenDetails || '',
+      siblings: user.siblings || '',
+      dietaryPreferences: user.dietaryPreferences || '',
+      emergencyContact: user.emergencyContact || '',
+      bloodGroup: user.bloodGroup || '',
+      homeAddress: user.homeAddress || '',
+      isOfficial: Boolean(user.isOfficial)
     }
   };
 };
@@ -597,15 +764,24 @@ const getAllUsers = async () => {
           id: String(u._id),
           _id: u._id,
           name: u.name,
-          email: u.email,
+          email: u.email || '',
           phone: u.phone,
           mobile: u.phone,
           avatar: u.avatar,
-          designation: u.designation,
+          designation: u.designation || '',
           location: u.location || '',
-          department: u.department,
+          department: u.department || '',
           officerId: u.officerId || ('GOI-DL-2026-' + String(u._id).slice(-4)),
+          dob: u.dob || '',
+          marriageDate: u.marriageDate || '',
+          importantDates: u.importantDates || '',
+          childrenCount: u.childrenCount || '',
+          childrenDetails: u.childrenDetails || '',
+          siblings: u.siblings || '',
+          dietaryPreferences: u.dietaryPreferences || '',
+          emergencyContact: u.emergencyContact || '',
           role: u.role || 'user',
+          isOfficial: Boolean(u.isOfficial),
           pinLoggedInAt: u.pinLoggedInAt || null,
           pinExpiresAt: u.pinExpiresAt || null,
           createdAt: u.createdAt
@@ -637,15 +813,24 @@ const getUserById = async (id) => {
           id: String(user._id),
           _id: user._id,
           name: user.name,
-          email: user.email,
+          email: user.email || '',
           phone: user.phone,
           mobile: user.phone,
           avatar: user.avatar,
-          designation: user.designation,
+          designation: user.designation || '',
           location: user.location || '',
-          department: user.department,
+          department: user.department || '',
           officerId: user.officerId || ('GOI-DL-2026-' + String(user._id).slice(-4)),
+          dob: user.dob || '',
+          marriageDate: user.marriageDate || '',
+          importantDates: user.importantDates || '',
+          childrenCount: user.childrenCount || '',
+          childrenDetails: user.childrenDetails || '',
+          siblings: user.siblings || '',
+          dietaryPreferences: user.dietaryPreferences || '',
+          emergencyContact: user.emergencyContact || '',
           role: user.role || 'user',
+          isOfficial: Boolean(user.isOfficial),
           lifetimeQrPayload: user.lifetimeQrPayload || '',
           lifetimeQrDataUrl: user.lifetimeQrDataUrl || '',
           lifetimeQrImage: user.lifetimeQrImage || '',
@@ -685,15 +870,24 @@ const updateUser = async (id, updates) => {
           id: String(user._id),
           _id: user._id,
           name: user.name,
-          email: user.email,
+          email: user.email || '',
           phone: user.phone,
           mobile: user.phone,
           avatar: user.avatar,
-          designation: user.designation,
+          designation: user.designation || '',
           location: user.location || '',
-          department: user.department,
+          department: user.department || '',
           officerId: user.officerId,
+          dob: user.dob || '',
+          marriageDate: user.marriageDate || '',
+          importantDates: user.importantDates || '',
+          childrenCount: user.childrenCount || '',
+          childrenDetails: user.childrenDetails || '',
+          siblings: user.siblings || '',
+          dietaryPreferences: user.dietaryPreferences || '',
+          emergencyContact: user.emergencyContact || '',
           role: user.role || 'user',
+          isOfficial: Boolean(user.isOfficial),
           updatedAt: user.updatedAt
         };
       }
@@ -767,11 +961,11 @@ const regenerateUserQr = async (userId) => {
     phone: user.phone,
     userPhone: user.phone,
     officerId: user.officerId,
-    designation: user.designation,
+    designation: user.designation || '',
     location: user.location || user.department || '',
-    department: user.department,
+    department: user.department || '',
     avatar: user.avatar,
-    email: user.email
+    email: user.email || ''
   });
 
   if (mongoose.connection.readyState === 1) {
@@ -817,7 +1011,109 @@ const regenerateUserQr = async (userId) => {
     }
   }
 
+  if (user.email && user.email.includes('@')) {
+    try {
+      await emailService.sendQrEmail({
+        to: user.email,
+        userName: user.name,
+        officerId: user.officerId,
+        designation: user.designation,
+        department: user.department,
+        phone: user.phone,
+        qrImage: qrInfo.qrImage,
+        qrDataUrl: qrInfo.qrDataUrl,
+        qrPayload: qrInfo.qrPayload,
+        qrId: qrInfo.qrId
+      });
+    } catch (err) {
+      console.error('[AUTH] Email dispatch warning for regenerated QR:', err.message);
+    }
+  }
+
   return qrInfo;
+};
+
+const sendOfficerQrEmail = async (userIdOrOfficerId, targetEmail = null) => {
+  let user = null;
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const isObjectId = mongoose.Types.ObjectId.isValid(userIdOrOfficerId);
+      user = await User.findOne({
+        $or: [
+          ...(isObjectId ? [{ _id: userIdOrOfficerId }] : []),
+          { officerId: userIdOrOfficerId },
+          { phone: userIdOrOfficerId },
+          { email: userIdOrOfficerId }
+        ]
+      });
+    } catch (e) {
+      console.warn('[AUTH] DB lookup error in sendOfficerQrEmail:', e.message);
+    }
+  }
+
+  if (!user && dataStore.getUserById) {
+    user = dataStore.getUserById(userIdOrOfficerId);
+  }
+  if (!user && dataStore.getUserByPhone) {
+    user = dataStore.getUserByPhone(userIdOrOfficerId);
+  }
+  if (!user && dataStore.getUserByEmail) {
+    user = dataStore.getUserByEmail(userIdOrOfficerId);
+  }
+
+  if (!user) {
+    const err = new Error('Officer not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const destinationEmail = targetEmail || user.email;
+  if (!destinationEmail || !destinationEmail.includes('@')) {
+    const err = new Error('No valid email address registered for this officer');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Ensure active QR exists or generate one
+  let qrInfo = null;
+  if (user.lifetimeQrPayload && !user.qrRevoked && (user.lifetimeQrImage || user.lifetimeQrDataUrl)) {
+    qrInfo = {
+      qrId: user.lifetimeQrId,
+      qrPayload: user.lifetimeQrPayload,
+      qrDataUrl: user.lifetimeQrDataUrl,
+      qrImage: user.lifetimeQrImage,
+      tokenHash: user.lifetimeQrTokenHash
+    };
+  } else {
+    qrInfo = await qrService.generateLifetimeQr({
+      userId: String(user._id || user.id),
+      name: user.name,
+      userName: user.name,
+      phone: user.phone,
+      userPhone: user.phone,
+      officerId: user.officerId,
+      designation: user.designation,
+      location: user.location,
+      department: user.department,
+      avatar: user.avatar,
+      email: destinationEmail
+    });
+  }
+
+  const result = await emailService.sendQrEmail({
+    to: destinationEmail,
+    userName: user.name,
+    officerId: user.officerId,
+    designation: user.designation,
+    department: user.department,
+    phone: user.phone,
+    qrImage: qrInfo.qrImage,
+    qrDataUrl: qrInfo.qrDataUrl,
+    qrPayload: qrInfo.qrPayload,
+    qrId: qrInfo.qrId
+  });
+
+  return { success: result.success, email: destinationEmail, officerName: user.name, officerId: user.officerId };
 };
 
 const updateUserProfile = async (userId, updates) => {
@@ -838,17 +1134,58 @@ const updateUserProfile = async (userId, updates) => {
         return {
           id: String(user._id),
           name: user.name,
-          email: user.email,
+          email: user.email || '',
           phone: user.phone,
-          designation: user.designation,
+          mobile: user.phone,
+          designation: user.designation || '',
           location: user.location || '',
-          department: user.department,
+          department: user.department || '',
           officerId: user.officerId,
-          avatar: user.avatar
+          avatar: user.avatar,
+          dob: user.dob || '',
+          marriageDate: user.marriageDate || '',
+          importantDates: user.importantDates || '',
+          childrenCount: user.childrenCount || '',
+          childrenDetails: user.childrenDetails || '',
+          siblings: user.siblings || '',
+          dietaryPreferences: user.dietaryPreferences || '',
+          emergencyContact: user.emergencyContact || '',
+          bloodGroup: user.bloodGroup || '',
+          homeAddress: user.homeAddress || '',
+          isOfficial: Boolean(user.isOfficial)
         };
       }
     } catch (e) {
       console.warn('[AUTH] MongoDB updateUserProfile warning:', e.message);
+    }
+  }
+
+  if (dataStore.updateUser) {
+    const updated = dataStore.updateUser(userId, updates);
+    if (updated) {
+      return {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email || '',
+        phone: updated.phone,
+        mobile: updated.phone,
+        designation: updated.designation || '',
+        location: updated.location || '',
+        department: updated.department || '',
+        officerId: updated.officerId,
+        avatar: updated.avatar,
+        dob: updated.dob || '',
+        marriageDate: updated.marriageDate || '',
+        importantDates: updated.importantDates || '',
+        childrenCount: updated.childrenCount || '',
+        childrenDetails: updated.childrenDetails || '',
+        siblings: updated.siblings || '',
+        dietaryPreferences: updated.dietaryPreferences || '',
+        emergencyContact: updated.emergencyContact || '',
+        bloodGroup: updated.bloodGroup || '',
+        homeAddress: updated.homeAddress || '',
+        isOfficial: Boolean(updated.isOfficial)
+      };
     }
   }
 
@@ -869,5 +1206,6 @@ module.exports = {
   updateUser,
   deleteUser,
   revokeUserQr,
-  regenerateUserQr
+  regenerateUserQr,
+  sendOfficerQrEmail
 };

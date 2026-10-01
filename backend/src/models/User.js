@@ -10,9 +10,10 @@ const userSchema = new mongoose.Schema(
 
         email: {
             type: String,
-            required: true,
+            required: false,
             lowercase: true,
-            trim: true
+            trim: true,
+            default: ""
         },
 
         phone: {
@@ -28,9 +29,7 @@ const userSchema = new mongoose.Schema(
 
         passwordUniquenessFingerprint: {
             type: String,
-            unique: true,
-            sparse: true,
-            index: true
+            default: null
         },
 
         pin: {
@@ -40,12 +39,12 @@ const userSchema = new mongoose.Schema(
 
         avatar: {
             type: String,
-            default: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80"
+            default: ""
         },
 
         designation: {
             type: String,
-            default: "IAS Officer • Special Duty"
+            default: ""
         },
 
         location: {
@@ -55,7 +54,7 @@ const userSchema = new mongoose.Schema(
 
         department: {
             type: String,
-            default: "Cabinet Secretariat • Government of India"
+            default: ""
         },
 
         officerId: {
@@ -63,9 +62,65 @@ const userSchema = new mongoose.Schema(
             default: ""
         },
 
+        // Personal & Family Profile Details
+        dob: {
+            type: String,
+            default: ""
+        },
+
+        marriageDate: {
+            type: String,
+            default: ""
+        },
+
+        importantDates: {
+            type: String,
+            default: ""
+        },
+
+        childrenCount: {
+            type: String,
+            default: ""
+        },
+
+        childrenDetails: {
+            type: String,
+            default: ""
+        },
+
+        siblings: {
+            type: String,
+            default: ""
+        },
+
+        dietaryPreferences: {
+            type: String,
+            default: ""
+        },
+
+        emergencyContact: {
+            type: String,
+            default: ""
+        },
+
+        bloodGroup: {
+            type: String,
+            default: ""
+        },
+
+        homeAddress: {
+            type: String,
+            default: ""
+        },
+
         role: {
             type: String,
             default: "user"
+        },
+
+        isOfficial: {
+            type: Boolean,
+            default: false
         },
 
         pinLoggedInAt: {
@@ -130,6 +185,5 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ phone: 1 });
-userSchema.index({ email: 1 });
 
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model("User", userSchema);

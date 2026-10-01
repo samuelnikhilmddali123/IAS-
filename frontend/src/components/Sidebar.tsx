@@ -9,7 +9,6 @@ export const Sidebar: React.FC = () => {
 
   const navItems: { tab: ScreenTab; label: string; icon: IconName; iconActive: IconName }[] = [
     { tab: 'home', label: 'Home', icon: 'home-outline', iconActive: 'home' },
-    { tab: 'menu', label: 'Menu', icon: 'restaurant-outline', iconActive: 'restaurant' },
     { tab: 'cart', label: 'Cart', icon: 'cart-outline', iconActive: 'cart' },
     { tab: 'orders', label: 'Orders', icon: 'receipt-outline', iconActive: 'receipt' },
     { tab: 'profile', label: 'Profile', icon: 'person-outline', iconActive: 'person' },

@@ -127,8 +127,20 @@ const orderSchema = new mongoose.Schema(
 
         orderType: {
             type: String,
-            enum: ['INSTANT', 'PRE_ORDER'],
+            enum: ['INSTANT', 'PRE_ORDER', 'now', 'later', 'NOW', 'LATER', 'DINE_IN', 'TAKEAWAY'],
             default: 'INSTANT'
+        },
+        isPreOrder: {
+            type: Boolean,
+            default: false
+        },
+        slotId: {
+            type: String,
+            default: null
+        },
+        preOrderSlot: {
+            type: String,
+            default: null
         },
         pickupDate: {
             type: Date,

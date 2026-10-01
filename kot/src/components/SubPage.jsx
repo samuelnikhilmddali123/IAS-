@@ -26,6 +26,7 @@ export function SubPage({
   orders,
   completedOrders,
   stats,
+  onStartPrep,
   onAcceptOrder,
   onRejectOrder,
   onMarkReady,
@@ -222,7 +223,8 @@ export function SubPage({
               <OrderCard
                 key={order.id || order.orderNumber}
                 order={order}
-                onAccept={onAcceptOrder}
+                onStartPrep={onStartPrep}
+                onAccept={onStartPrep || onAcceptOrder}
                 onReject={onRejectOrder}
                 onMarkReady={onMarkReady}
                 onMarkCompleted={onMarkCompleted}

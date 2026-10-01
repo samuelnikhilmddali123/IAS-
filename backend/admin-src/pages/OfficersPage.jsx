@@ -111,6 +111,32 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
     }
   };
 
+  const handleToggleOfficial = async (officer) => {
+    const targetStatus = !officer.isOfficial;
+    const confirmMsg = targetStatus
+      ? `Mark ${officer.name} as an Official / Verified Officer? They will receive the verified blue tick and Official pricing.`
+      : `Remove Official status for ${officer.name}? They will be converted to General User with standard pricing.`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch(`/api/auth/users/${officer.id}/toggle-official`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isOfficial: targetStatus })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Officer ${officer.name} is now ${targetStatus ? 'Verified Official ✓' : 'General User'}`);
+        await refreshAllData();
+      } else {
+        alert('Failed: ' + (data.message || 'Error'));
+      }
+    } catch (e) {
+      alert('Error updating officer official status');
+    }
+  };
+
   const handleInspectQr = (officer) => {
     const qrImg = officer.lifetimeQrImage || officer.lifetimeQrDataUrl || '';
     setInspectingQr({
@@ -126,7 +152,7 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
       <div className="section-header">
         <div>
           <h2>Registered IAS Officers</h2>
-          <p>Manage registered officers, update mobile numbers, and monitor cryptographically signed lifetime QR credentials</p>
+          <p>Manage registered officers, verify Official IAS status for special pricing, update mobile numbers, and monitor lifetime QR credentials</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <input
@@ -149,6 +175,7 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
               <th>Mobile Number</th>
               <th>Official Email</th>
               <th>Department / Office</th>
+              <th>User Status</th>
               <th>QR Status</th>
               <th>Actions</th>
             </tr>
@@ -156,7 +183,7 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
           <tbody>
             {filteredOfficers.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
+                <td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
                   {officers.length === 0
                     ? 'No registered officers found in the database.'
                     : 'No officers matching your search criteria.'}
@@ -166,6 +193,7 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
               filteredOfficers.map((officer) => {
                 const isRevoked = !!officer.qrRevoked;
                 const qrAvailable = officer.lifetimeQrImage || officer.lifetimeQrDataUrl;
+                const isOfficial = !!officer.isOfficial;
 
                 return (
                   <tr key={officer.id}>
@@ -177,7 +205,12 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
                       />
                     </td>
                     <td>
-                      <div style={{ fontWeight: 700, color: '#0a3d31' }}>{officer.name}</div>
+                      <div style={{ fontWeight: 700, color: '#0a3d31', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        {officer.name}
+                        {isOfficial && (
+                          <span style={{ color: '#2563eb', fontSize: '13px', fontWeight: '800' }} title="Verified Official User">✓</span>
+                        )}
+                      </div>
                       <div style={{ fontSize: '11px', color: '#64748b' }}>
                         ID: {officer.id ? officer.id.substring(0, 8) : '—'}
                       </div>
@@ -194,6 +227,17 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
                       </span>
                     </td>
                     <td>
+                      {isOfficial ? (
+                        <span className="badge" style={{ background: '#dbeafe', color: '#1d4ed8', fontWeight: 700, fontSize: '11px' }}>
+                          ✓ OFFICIAL
+                        </span>
+                      ) : (
+                        <span className="badge" style={{ background: '#f1f5f9', color: '#64748b', fontWeight: 600, fontSize: '11px' }}>
+                          GENERAL
+                        </span>
+                      )}
+                    </td>
+                    <td>
                       {isRevoked ? (
                         <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c', fontWeight: 700, fontSize: '11px' }}>
                           🚫 REVOKED
@@ -206,6 +250,22 @@ export const OfficersPage = ({ officers, refreshAllData, showToast }) => {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn-outline"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            color: isOfficial ? '#2563eb' : '#059669',
+                            borderColor: isOfficial ? '#93c5fd' : '#86efac',
+                            backgroundColor: isOfficial ? '#eff6ff' : '#f0fdf4',
+                            fontWeight: '600'
+                          }}
+                          onClick={() => handleToggleOfficial(officer)}
+                          title={isOfficial ? 'Remove Official Status' : 'Mark as Official / Verified User'}
+                        >
+                          {isOfficial ? 'Remove Official' : '✓ Mark Official'}
+                        </button>
+
                         <button
                           className="btn-outline"
                           style={{ padding: '4px 8px', fontSize: '11px' }}

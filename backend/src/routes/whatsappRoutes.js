@@ -24,6 +24,16 @@ router.post('/pair', async (req, res) => {
   }
 });
 
+// Flush all pending messages in outbox
+router.post('/flush', async (req, res) => {
+  try {
+    await whatsappService.flushPendingOutbox();
+    res.json({ success: true, message: 'Pending messages flush completed' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Disconnect / Unlink WhatsApp Web Device
 router.post('/disconnect', async (req, res) => {
   try {

@@ -96,7 +96,7 @@ if (-not $billData) {
     $billData = [PSCustomObject]@{
         invoiceNo = "INV-" + (Get-Date -Format "yyMMdd") + "-001"
         userName = "IAS Officer"
-        designation = "Special Duty Officer"
+        designation = ""
         department = "Cabinet Secretariat"
         date = (Get-Date -Format "dd MMM yyyy")
         time = (Get-Date -Format "hh:mm tt")
@@ -288,7 +288,7 @@ $g.DrawString("GOOD FOOD. GREATER SERVICE.", $fontFootSub, $blackBrush, 288, ($c
 $g.Dispose()
 
 # Save rendered image for direct PDF export
-$tempBillPng = "C:\Users\Nikhil\Downloads\restaurant\backend\temp_user_bill.png"
+$tempBillPng = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\temp_user_bill.png"))
 try {
     $bmp.Save($tempBillPng, [System.Drawing.Imaging.ImageFormat]::Png)
 } catch {}
