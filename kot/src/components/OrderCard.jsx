@@ -7,7 +7,8 @@ import {
   User,
   CheckCircle2,
   AlertCircle,
-  Printer
+  Printer,
+  Calendar
 } from 'lucide-react';
 import { printPaymentBill } from '../utils/printer';
 
@@ -90,6 +91,28 @@ export function OrderCard({ order, onStartPrep, onAccept, onReject, onMarkReady,
           {order.status === 'ready' && (order.readyTimeAgo || 'Ready just now')}
         </span>
       </div>
+
+      {/* Prominent Pre-Order Scheduled Date & Slot Banner */}
+      {order.isPreOrder && (
+        <div style={{
+          backgroundColor: '#fef3c7',
+          border: '1px solid #fde68a',
+          borderRadius: '6px',
+          padding: '4px 8px',
+          marginTop: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: '#92400e'
+        }}>
+          <Calendar size={13} color="#b45309" />
+          <span>
+            ⏳ Pre-Order: {order.pickupDateStr ? `${order.pickupDateStr}, ` : ''}{order.pickupTime || order.preOrderSlot || 'Scheduled Slot'}
+          </span>
+        </div>
+      )}
 
       {/* Subheader: Table & Type Tags */}
       <div className="card-subheader" style={{ marginTop: '0.5rem' }}>

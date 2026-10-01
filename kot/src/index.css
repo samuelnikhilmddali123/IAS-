@@ -670,7 +670,7 @@ body {
 /* Kanban Board & Grid Layout */
 .main-dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 310px;
+  grid-template-columns: 1fr 1fr 340px;
   gap: 1rem;
   align-items: stretch;
   flex: 1;

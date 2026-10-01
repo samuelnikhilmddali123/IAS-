@@ -24,6 +24,10 @@ const orderRoutes = require('./src/routes/orderRoutes');
 const whatsappRoutes = require('./src/routes/whatsappRoutes');
 const orderService = require('./src/services/orderService');
 const dataStore = require('./src/storage/dataStore');
+const { enableWindowsKeepAwake } = require('./src/utils/keepAwake');
+
+// Prevent host computer from sleeping during operational canteen hours
+enableWindowsKeepAwake();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -49,6 +53,9 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 // Static files for KOT Kitchen Display and Normal Admin Dashboard
 const kotPath = path.join(__dirname, 'public/admin/kot');
 app.use('/admin/kot', express.static(kotPath));
+app.use('/admin/kot', (req, res) => {
+  res.sendFile(path.join(kotPath, 'index.html'));
+});
 
 // High-performance static caching options for images (30-day browser cache + immutable)
 const imageStaticOptions = {

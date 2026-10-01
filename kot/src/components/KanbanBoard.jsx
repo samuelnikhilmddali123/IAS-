@@ -28,7 +28,7 @@ export function KanbanBoard({
 }) {
   // Filter logic helper
   const filterOrders = (list) => {
-    return list.filter((order) => {
+    return (list || []).filter((order) => {
       // Type filter
       if (filterType !== 'All Orders' && order.type !== filterType) {
         return false;
@@ -48,6 +48,7 @@ export function KanbanBoard({
   const allPrepList = [...(orders.new || []), ...(orders.prep || [])];
   const prepFiltered = filterOrders(allPrepList);
   const readyFiltered = filterOrders(orders.ready || []);
+  const preOrdersFiltered = filterOrders(orders.preOrders || []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
@@ -96,7 +97,7 @@ export function KanbanBoard({
         </div>
       </div>
 
-      {/* Main Grid: 2 Order Columns + Right Panel */}
+      {/* Main Grid: 2 Cooking/Ready Columns + Dedicated Pre-Orders Section */}
       <div className="main-dashboard-grid">
         <div className="kanban-column column-prep">
           <div className="column-header">
@@ -134,7 +135,7 @@ export function KanbanBoard({
           </div>
         </div>
 
-        {/* Column 3: Ready */}
+        {/* Column 2: Ready */}
         <div className="kanban-column column-ready">
           <div className="column-header">
             <div className="column-header-left">
@@ -168,8 +169,13 @@ export function KanbanBoard({
           </div>
         </div>
 
-        {/* Right Side Panel */}
-        <RightPanel completedOrders={completedOrders} alerts={alerts} />
+        {/* Column 3: Dedicated Pre-Orders Section */}
+        <RightPanel
+          preOrders={preOrdersFiltered}
+          onStartPrep={onStartPrep || onAcceptOrder}
+          onMarkReady={onMarkReady}
+          onReject={onRejectOrder}
+        />
       </div>
     </div>
   );

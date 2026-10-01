@@ -682,9 +682,9 @@ router.get('/:id/bill-html', async (req, res) => {
     const dateStr = orderDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     const timeStr = orderDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     const totalAmount = order.totalAmount || order.grandTotal || 0;
-    const items = order.items || order.orderItems || [];
-    const paymentMethod = order.paymentMethod || order.paymentMode || 'Online UPI';
-    const isPaid = order.paymentStatus === 'PAID' || order.isPaid === true;
+    const isPreOrder = Boolean(order.isPreOrder || order.orderType === 'PRE_ORDER' || order.pickupTime || order.preOrderSlot);
+    const pickupTime = order.pickupTime || order.preOrderSlot || '';
+    const pickupDate = order.pickupDate || null;
 
     const html = await billImageService.generateBillHtml({
       invoiceNo,
@@ -699,7 +699,12 @@ router.get('/:id/bill-html', async (req, res) => {
       items,
       paymentMethod,
       paymentStatus: isPaid ? 'PAID' : (order.paymentStatus || 'UNPAID'),
-      isPaid
+      isPaid,
+      isPreOrder,
+      orderType: isPreOrder ? 'PRE_ORDER' : (order.orderType || 'INSTANT'),
+      pickupTime,
+      pickupDate,
+      preOrderSlot: order.preOrderSlot || pickupTime
     });
 
     res.setHeader('Content-Type', 'text/html');
@@ -791,8 +796,11 @@ router.get('/:id/kot-html', async (req, res) => {
     const rawOrderNo = order.orderNumber || (order._id ? String(order._id).slice(-6).toUpperCase() : 'ORD-2026-12779');
     const orderNo = rawOrderNo.startsWith('#') ? rawOrderNo.slice(1) : rawOrderNo;
     const tableNo = order.tableNumber || order.table || (order.tokenNumber ? `T-${order.tokenNumber}` : 'T-44');
-    const isPreOrder = Boolean(order.isPreOrder || order.orderType === 'PRE_ORDER' || order.pickupTime);
+    const officerName = order.userName || order.customerName || (order.user && (order.user.name || order.user.fullName)) || 'IAS Officer';
+    const isPreOrder = Boolean(order.isPreOrder || order.orderType === 'PRE_ORDER' || order.pickupTime || order.preOrderSlot);
     const orderType = isPreOrder ? 'PRE-ORDER' : (order.orderType ? String(order.orderType).toUpperCase() : 'INSTANT');
+    const slotTime = order.pickupTime || order.preOrderSlot || '';
+    const pickupDateStr = order.pickupDate ? new Date(order.pickupDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
     
     const orderDate = new Date(order.createdAt || Date.now());
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
@@ -1078,8 +1086,8 @@ router.get('/:id/kot-html', async (req, res) => {
   </div>
 
   <!-- 2. Banner Bar -->
-  <div class="kot-badge-box">KITCHEN ORDER</div>
-  <div class="kot-badge-sub">PREPARE WITH CARE</div>
+  <div class="kot-badge-box">${isPreOrder ? 'PRE-ORDER BOOKING' : 'KITCHEN ORDER'}</div>
+  <div class="kot-badge-sub">${isPreOrder ? (slotTime ? `SCHEDULED: ${slotTime}` : 'PRE-ORDER PICKUP') : 'PREPARE WITH CARE'}</div>
 
   <!-- 3. Dashed line -->
   <div class="dashed-line"></div>
@@ -1093,30 +1101,42 @@ router.get('/:id/kot-html', async (req, res) => {
         <td class="val">#${orderNo}</td>
       </tr>
       <tr>
-        <td class="label">Date</td>
+        <td class="label">Officer</td>
         <td class="colon">:</td>
-        <td class="val">${dateStr}</td>
-      </tr>
-      <tr>
-        <td class="label">Time</td>
-        <td class="colon">:</td>
-        <td class="val">${timeStr}</td>
-      </tr>
-      <tr>
-        <td class="label">Table</td>
-        <td class="colon">:</td>
-        <td class="val">${tableNo}</td>
+        <td class="val">${officerName}</td>
       </tr>
       <tr>
         <td class="label">Order Type</td>
         <td class="colon">:</td>
-        <td class="val">${orderType}</td>
+        <td class="val" style="font-weight: 700; color: ${isPreOrder ? '#b45309' : '#111111'};">${orderType}</td>
+      </tr>
+      ${isPreOrder && pickupDateStr ? `
+      <tr>
+        <td class="label">Pickup Date</td>
+        <td class="colon">:</td>
+        <td class="val" style="font-weight: 700; color: #166534;">${pickupDateStr}</td>
+      </tr>` : ''}
+      ${isPreOrder && slotTime ? `
+      <tr>
+        <td class="label">Slot Time</td>
+        <td class="colon">:</td>
+        <td class="val" style="font-weight: 700; color: #166534;">${slotTime}</td>
+      </tr>` : ''}
+      <tr>
+        <td class="label">Booked At</td>
+        <td class="colon">:</td>
+        <td class="val">${dateStr}, ${timeStr}</td>
+      </tr>
+      <tr>
+        <td class="label">Location</td>
+        <td class="colon">:</td>
+        <td class="val">${tableNo}</td>
       </tr>
     </table>
 
     <div class="table-box">
-      <div class="tb-label">TABLE</div>
-      <div class="tb-val">${tableNo}</div>
+      <div class="tb-label">${isPreOrder ? 'BOOKING' : 'TABLE'}</div>
+      <div class="tb-val" style="font-size: ${isPreOrder ? '14px' : '22px'};">${isPreOrder ? 'PRE-ORDER' : tableNo}</div>
     </div>
   </div>
 

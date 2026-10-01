@@ -326,7 +326,7 @@ async function getPrebookSlots(options = {}) {
   const currentHours = now.getHours();
   const currentMinutes = now.getMinutes();
   const currentTotalMinutes = currentHours * 60 + currentMinutes;
-  const bufferMinutes = 15; // 15-minute preparation lead time required
+  const bufferMinutes = 0; // Allow instant booking for the upcoming 30-minute window (e.g., at 4:00 PM, 4:30 PM slot is selectable)
 
   const bookingsMap = await getBookingsCountMap(targetDateStr);
 
@@ -343,12 +343,12 @@ async function getPrebookSlots(options = {}) {
     let status = 'AVAILABLE';
     let unavailableReason = null;
 
-    // Time cutoff validation for today
+    // Time cutoff validation for today: only past slots are disabled
     if (isToday) {
-      if (currentTotalMinutes + bufferMinutes >= slotStartTotalMinutes) {
+      if (currentTotalMinutes > slotStartTotalMinutes) {
         isAvailable = false;
         status = 'CUTOFF_PASSED';
-        unavailableReason = 'Slot booking closed for today (Cutoff time passed)';
+        unavailableReason = 'Slot booking closed for today (Time passed)';
       }
     } else if (targetDateStr < todayStr) {
       isAvailable = false;

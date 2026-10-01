@@ -208,19 +208,32 @@ function generateUserPaidBillReceiptBuffer(userBillData) {
     ? userBillData.items
     : [{ name: 'Dining & Food Services', qty: 1, price: userBillData.totalAmount || 0, total: userBillData.totalAmount || 0 }];
 
+  const isPreOrder = Boolean(userBillData.orderType === 'PRE_ORDER' || userBillData.isPreOrder || userBillData.pickupTime || userBillData.preOrderSlot);
+  const slotTime = userBillData.pickupTime || userBillData.preOrderSlot || '';
+  const pickupDateStr = userBillData.pickupDate ? new Date(userBillData.pickupDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+
   builder.add(CMD.INIT)
          .add(CMD.ALIGN_CENTER)
          .add(CMD.TEXT_DOUBLE_HW).add(CMD.BOLD_ON).textLine("CANTEEN SERVICES").add(CMD.TEXT_NORMAL).add(CMD.BOLD_OFF)
          .textLine("GOVERNMENT OF INDIA")
          .textLine("OFFICERS MESS & DINING")
-         .add(CMD.BOLD_ON).textLine("TAX INVOICE & SETTLEMENT RECEIPT").add(CMD.BOLD_OFF)
+         .add(CMD.BOLD_ON).textLine(isPreOrder ? "TAX INVOICE (PRE-ORDER)" : "TAX INVOICE & SETTLEMENT RECEIPT").add(CMD.BOLD_OFF)
          .lineFeed(1)
-         .add(CMD.INVERT_ON).add(CMD.TEXT_DOUBLE_H).textLine(" *** PAYMENT SETTLED & PAID *** ").add(CMD.INVERT_OFF).add(CMD.TEXT_NORMAL)
+         .add(CMD.INVERT_ON).add(CMD.TEXT_DOUBLE_H).textLine(isPreOrder ? " *** PRE-ORDER BOOKING PAID *** " : " *** PAYMENT SETTLED & PAID *** ").add(CMD.INVERT_OFF).add(CMD.TEXT_NORMAL)
          .lineFeed(1)
          .add(CMD.ALIGN_LEFT)
          .textLine("------------------------------------------")
          .textLine(`Invoice No  : ${invoiceNo}`)
-         .textLine(`Date & Time : ${dateStr}, ${timeStr}`);
+         .textLine(`Order Type  : ${isPreOrder ? 'PRE-ORDER' : 'INSTANT'}`);
+
+  if (isPreOrder && pickupDateStr) {
+    builder.textLine(`Pickup Date : ${pickupDateStr}`);
+  }
+  if (isPreOrder && slotTime) {
+    builder.textLine(`Pickup Slot : ${slotTime}`);
+  }
+
+  builder.textLine(`Date & Time : ${dateStr}, ${timeStr}`);
 
   if (orderNumber) {
     builder.textLine(`Order Ref   : ${orderNumber}`);

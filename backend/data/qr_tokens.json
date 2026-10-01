@@ -14,8 +14,8 @@
     "expiresAt": null,
     "revoked": false,
     "revokedAt": null,
-    "lastUsedAt": null,
-    "useCount": 0
+    "lastUsedAt": "2026-10-01T09:16:49.207Z",
+    "useCount": 1
   },
   {
     "id": "qr_1790834229290_6c53f60c",
@@ -86,7 +86,7 @@
     "expiresAt": null,
     "revoked": false,
     "revokedAt": null,
-    "lastUsedAt": null,
-    "useCount": 0
+    "lastUsedAt": "2026-10-01T09:20:49.103Z",
+    "useCount": 2
   }
 ]

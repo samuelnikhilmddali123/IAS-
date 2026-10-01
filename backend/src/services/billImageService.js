@@ -10,6 +10,19 @@ async function generateBillHtml(billData) {
   const invoiceNo = billData?.invoiceNo || billData?.invoiceNumber || billData?.billNo || billData?.billNumber || (billData?.orderNumber ? billData.orderNumber.replace('ORD-', 'INV-') : 'INV-2026-15277');
   const officerName = billData?.userName || billData?.officerName || billData?.customerName || 'Chandra Babu Naidu';
 
+  const isPreOrder = Boolean(
+    billData?.isPreOrder ||
+    (billData?.orderType && String(billData.orderType).toUpperCase() === 'PRE_ORDER') ||
+    billData?.pickupTime ||
+    billData?.preOrderSlot ||
+    billData?.slotId
+  );
+  const pickupTime = billData?.pickupTime || billData?.preOrderSlot || (billData?.slot && billData.slot.label) || '';
+  const pickupDateStr = billData?.pickupDate
+    ? new Date(billData.pickupDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+  const orderType = isPreOrder ? 'PRE-ORDER' : (billData?.orderType || 'INSTANT');
+
   const now = new Date();
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
   const defaultDate = `${now.getDate().toString().padStart(2, '0')} ${months[now.getMonth()]} ${now.getFullYear()}`;
@@ -467,8 +480,8 @@ async function generateBillHtml(billData) {
     </div>
 
     <!-- Solid Black Banner -->
-    <div class="paid-banner">FOOD INVOICE (PAID)</div>
-    <div class="paid-verified-sub">ONLINE PAYMENT VERIFIED</div>
+    <div class="paid-banner">${isPreOrder ? 'PRE-ORDER INVOICE (PAID)' : 'FOOD INVOICE (PAID)'}</div>
+    <div class="paid-verified-sub">${isPreOrder ? (pickupTime ? `SCHEDULED PICKUP: ${pickupTime}` : 'PRE-ORDER BOOKING CONFIRMED') : 'ONLINE PAYMENT VERIFIED'}</div>
 
     <!-- Dashed Divider -->
     <div class="dashed-divider"></div>
@@ -485,6 +498,23 @@ async function generateBillHtml(billData) {
         <span class="meta-colon">:</span>
         <span class="meta-val">${officerName}</span>
       </div>
+      <div class="meta-row">
+        <span class="meta-key">Order Type</span>
+        <span class="meta-colon">:</span>
+        <span class="meta-val" style="font-weight: 700; color: ${isPreOrder ? '#b45309' : '#111111'};">${orderType}</span>
+      </div>
+      ${isPreOrder && pickupDateStr ? `
+      <div class="meta-row">
+        <span class="meta-key">Pickup Date</span>
+        <span class="meta-colon">:</span>
+        <span class="meta-val" style="font-weight: 700; color: #166534;">${pickupDateStr}</span>
+      </div>` : ''}
+      ${isPreOrder && pickupTime ? `
+      <div class="meta-row">
+        <span class="meta-key">Pickup Slot</span>
+        <span class="meta-colon">:</span>
+        <span class="meta-val" style="font-weight: 700; color: #166534;">${pickupTime}</span>
+      </div>` : ''}
       <div class="meta-row">
         <span class="meta-key">Date</span>
         <span class="meta-colon">:</span>

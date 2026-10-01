@@ -35,7 +35,8 @@ export function App() {
     prep: [],
     ready: [],
     completed: [],
-    cancelled: []
+    cancelled: [],
+    preOrders: []
   });
   const [completedOrders, setCompletedOrders] = useState([]);
   const [alerts, setAlerts] = useState(initialAlerts);
@@ -90,7 +91,8 @@ export function App() {
           .filter(Boolean)
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        const bucketNew = normalizedList.filter(o => o.status === 'new');
+        const bucketPreOrders = normalizedList.filter(o => o.isPreOrder && o.status !== 'completed' && o.status !== 'cancelled');
+        const bucketNew = normalizedList.filter(o => o.status === 'new' && !o.isPreOrder);
         const bucketPrep = normalizedList.filter(o => o.status === 'prep');
         const bucketReady = normalizedList.filter(o => o.status === 'ready');
         const bucketCompleted = normalizedList.filter(o => o.status === 'completed');
@@ -101,7 +103,8 @@ export function App() {
           prep: bucketPrep,
           ready: bucketReady,
           completed: bucketCompleted,
-          cancelled: bucketCancelled
+          cancelled: bucketCancelled,
+          preOrders: bucketPreOrders
         });
 
         // Map completed orders for the right panel & history table
@@ -207,15 +210,23 @@ export function App() {
       const normalized = normalizeOrder({
         ...kot,
         id: kot.orderNumber || String(Date.now()),
-        status: 'NEW',
-        kitchenStatus: 'NEW',
+        status: kot.isPreOrder || kot.orderType === 'PRE_ORDER' ? 'PRE_ORDERED' : 'NEW',
+        kitchenStatus: kot.isPreOrder || kot.orderType === 'PRE_ORDER' ? 'PRE_ORDERED' : 'NEW',
         createdAt: kot.orderTime || new Date().toISOString()
       });
 
-      setOrders((prev) => ({
-        ...prev,
-        new: [normalized, ...(prev.new || [])]
-      }));
+      setOrders((prev) => {
+        if (normalized.isPreOrder) {
+          return {
+            ...prev,
+            preOrders: [normalized, ...(prev.preOrders || [])]
+          };
+        }
+        return {
+          ...prev,
+          new: [normalized, ...(prev.new || [])]
+        };
+      });
 
       // Single Auto-print KOT on checkout
       autoPrintKOT(normalized.orderNumber || normalized._id || normalized.id);
@@ -281,13 +292,15 @@ export function App() {
   const cancelledCount = orders.cancelled?.length || 0;
   const totalCount = stats?.totalOrdersCount || (newCount + prepCount + readyCount + completedCount + cancelledCount);
 
-  // Handler: Start Prep (Moves New -> Preparing Food via backend)
+  // Handler: Start Prep (Moves New / Pre-Order -> Preparing Food via backend)
   const handleStartPrep = async (orderId) => {
     const target = (orders.new || []).find((o) => o.id === orderId || o._id === orderId) ||
-                   (orders.prep || []).find((o) => o.id === orderId || o._id === orderId);
+                   (orders.prep || []).find((o) => o.id === orderId || o._id === orderId) ||
+                   (orders.preOrders || []).find((o) => o.id === orderId || o._id === orderId);
     if (!target) return;
 
     const updatedNew = (orders.new || []).filter((o) => o.id !== orderId && o._id !== orderId);
+    const updatedPreOrders = (orders.preOrders || []).filter((o) => o.id !== orderId && o._id !== orderId);
     const newPrepItem = {
       ...target,
       status: 'prep',
@@ -298,6 +311,7 @@ export function App() {
     setOrders({
       ...orders,
       new: updatedNew,
+      preOrders: updatedPreOrders,
       prep: [newPrepItem, ...(orders.prep || []).filter((o) => o.id !== orderId && o._id !== orderId)]
     });
 
@@ -324,14 +338,17 @@ export function App() {
   // Handler: Reject / Cancel Order
   const handleRejectOrder = async (orderId) => {
     const target = (orders.new || []).find((o) => o.id === orderId || o._id === orderId) ||
-                   (orders.prep || []).find((o) => o.id === orderId || o._id === orderId);
+                   (orders.prep || []).find((o) => o.id === orderId || o._id === orderId) ||
+                   (orders.preOrders || []).find((o) => o.id === orderId || o._id === orderId);
     const updatedNew = (orders.new || []).filter((o) => o.id !== orderId && o._id !== orderId);
     const updatedPrep = (orders.prep || []).filter((o) => o.id !== orderId && o._id !== orderId);
+    const updatedPreOrders = (orders.preOrders || []).filter((o) => o.id !== orderId && o._id !== orderId);
 
     setOrders({
       ...orders,
       new: updatedNew,
       prep: updatedPrep,
+      preOrders: updatedPreOrders,
       cancelled: target ? [{ ...target, status: 'cancelled' }, ...orders.cancelled] : orders.cancelled
     });
 

@@ -61,6 +61,12 @@ export const normalizeOrder = (raw) => {
 
   const orderId = raw.id || raw._id || raw.orderNumber || String(Math.floor(Math.random() * 9000) + 1000);
 
+  const isPreOrder = Boolean(raw.isPreOrder || raw.orderType === 'PRE_ORDER' || raw.pickupTime || raw.preOrderSlot);
+  const pickupTime = raw.pickupTime || raw.preOrderSlot || (raw.slot && raw.slot.label) || null;
+  const pickupDateStr = raw.pickupDate
+    ? new Date(raw.pickupDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+    : '';
+
   return {
     id: orderId,
     _id: raw._id || raw.id,
@@ -68,7 +74,12 @@ export const normalizeOrder = (raw) => {
     tokenNumber: raw.tokenNumber || null,
     userName: raw.userName || raw.customerName || 'Officer',
     userPhone: raw.userPhone || '',
-    type: raw.orderType === 'INSTANT' ? 'Instant KOT' : raw.orderType || raw.type || 'Dine In',
+    type: isPreOrder ? 'Pre-Order' : (raw.orderType === 'INSTANT' ? 'Instant KOT' : raw.orderType || raw.type || 'Dine In'),
+    isPreOrder,
+    pickupTime,
+    pickupDate: raw.pickupDate || null,
+    pickupDateStr,
+    preOrderSlot: raw.preOrderSlot || pickupTime,
     table: raw.table || (raw.mealSlot && raw.mealSlot !== 'General' ? `${raw.mealSlot} Slot` : 'Counter Pickup'),
     items,
     note: raw.orderNote || raw.note || '',
